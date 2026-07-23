@@ -1,4 +1,5 @@
 mod fix;
+mod schedule;
 mod text;
 mod tools;
 
@@ -78,6 +79,33 @@ enum Command {
     },
     /// Show network status: route, DNS, listening ports and latency
     Network,
+    /// Run a checkup, record it in history, and notify on active alerts
+    Monitor {
+        /// Suppress stdout (for scheduled runs); still sends notifications
+        #[arg(long)]
+        quiet: bool,
+    },
+    /// Show the recorded health-score trend
+    History,
+    /// Schedule automatic checkups via a systemd user timer
+    Schedule {
+        #[command(subcommand)]
+        action: ScheduleAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ScheduleAction {
+    /// Run a checkup every day
+    Daily,
+    /// Run a checkup every week
+    Weekly,
+    /// Run a checkup every month
+    Monthly,
+    /// Turn off scheduled checkups
+    Off,
+    /// Show whether scheduled checkups are enabled
+    Status,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -86,6 +114,7 @@ enum Format {
     Json,
     Markdown,
     Html,
+    Pdf,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -123,11 +152,27 @@ fn main() -> Result<()> {
             let lang = resolve_lang(lang);
             eprintln!("Running SysMedic checkup...");
             let report = engine().run();
+
+            if format == Format::Pdf {
+                let path = output.unwrap_or_else(|| PathBuf::from("sysmedic-report.pdf"));
+                match sysmedic_report::write_pdf(&report, lang, &path) {
+                    Ok(()) => eprintln!("PDF report written to {}", path.display()),
+                    Err(e) => {
+                        // Fall back to an HTML file next to the requested path.
+                        let html_path = path.with_extension("html");
+                        fs::write(&html_path, sysmedic_report::to_html(&report, lang))?;
+                        eprintln!("{e}\nHTML report written to {}", html_path.display());
+                    }
+                }
+                return Ok(());
+            }
+
             let rendered = match format {
                 Format::Text => text::render(&report, lang),
                 Format::Json => sysmedic_report::to_json(&report),
                 Format::Markdown => sysmedic_report::to_markdown(&report, lang),
                 Format::Html => sysmedic_report::to_html(&report, lang),
+                Format::Pdf => unreachable!("handled above"),
             };
             match output {
                 Some(path) => {
@@ -166,6 +211,15 @@ fn main() -> Result<()> {
         Command::Undo { yes } => fix::undo(yes)?,
         Command::Disk { path, depth, top } => tools::disk(path, depth, top)?,
         Command::Network => tools::network()?,
+        Command::Monitor { quiet } => tools::monitor(quiet)?,
+        Command::History => tools::history()?,
+        Command::Schedule { action } => match action {
+            ScheduleAction::Daily => schedule::enable(schedule::Cadence::Daily)?,
+            ScheduleAction::Weekly => schedule::enable(schedule::Cadence::Weekly)?,
+            ScheduleAction::Monthly => schedule::enable(schedule::Cadence::Monthly)?,
+            ScheduleAction::Off => schedule::disable()?,
+            ScheduleAction::Status => schedule::status()?,
+        },
     }
     Ok(())
 }

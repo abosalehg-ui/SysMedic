@@ -27,6 +27,7 @@ pub struct Strings {
     pub app_comment: &'static str,
     pub overview: &'static str,
     pub disk_usage: &'static str,
+    pub history_tooltip: &'static str,
 }
 
 impl Strings {
@@ -54,6 +55,7 @@ impl Strings {
                     "A doctor for your Linux system: checkup, diagnose, explain, prescribe.",
                 overview: "Overview",
                 disk_usage: "Disk Usage",
+                history_tooltip: "Health-score history (most recent on the right)",
             },
             Lang::Ar => &Strings {
                 health_score: "الدرجة الصحية",
@@ -76,6 +78,7 @@ impl Strings {
                 app_comment: "طبيب لنظام لينكس: فحص، تشخيص، شرح، ووصف علاج آمن.",
                 overview: "النظرة العامة",
                 disk_usage: "استخدام القرص",
+                history_tooltip: "سجل الدرجة الصحية (الأحدث على اليمين)",
             },
         }
     }

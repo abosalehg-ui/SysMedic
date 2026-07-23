@@ -58,11 +58,22 @@ issues), CI (fmt + clippy + tests + build), GPL-3.0.
 - (Per-process live bandwidth deferred: it needs sampling and elevated
   privileges; open ports with scope cover the exposed-service question.)
 
-## M5 — Follow-up
-- `sysmedicd` resident service (D-Bus) hosting the scheduler
-- Scheduler: daily/weekly/monthly checkups via systemd user timers
-- Notifications: disk full, overheating, low RAM, security updates
-- HTML report polish + PDF export; health-score history
+## M5 — Follow-up ✅
+- Scheduler: `sysmedic schedule daily|weekly|monthly|off|status` installs a
+  **systemd user timer** running `sysmedic monitor` — the Linux-native way to
+  schedule work (survives reboots, zero idle cost, battery-friendly). Unit-file
+  builders are pure and unit-tested
+- Notifications: `sysmedic monitor` evaluates alert thresholds (disk full,
+  overheating, low RAM, pending security updates) and fires desktop
+  notifications via `notify-send` (degrades if absent). Thresholds are pure/tested
+- Health history: `sysmedic-history` crate appends every checkup to a JSONL
+  log; `sysmedic history` shows a sparkline + trend; the GUI overview gains a
+  trend strip; both CLI and GUI record on each checkup
+- PDF export: `sysmedic checkup --format pdf` renders the HTML report through a
+  headless browser (chromium) or wkhtmltopdf, falling back to HTML if neither
+  is installed
+- (A resident D-Bus `sysmedicd` proved unnecessary: systemd timers *are* the
+  scheduler, with a far smaller footprint than an always-on daemon.)
 
 ## M6 — 1.0 release
 - Packaging: Flatpak (primary/Flathub), deb, AppImage, Snap

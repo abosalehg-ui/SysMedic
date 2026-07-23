@@ -1,11 +1,14 @@
-//! `sysmedic disk` and `sysmedic network` — the M4 advanced tools on the CLI.
+//! `sysmedic disk`, `network`, `monitor` and `history` — the advanced tools.
 
 use std::path::Path;
 use std::process::Command;
 
 use anyhow::Result;
 use owo_colors::OwoColorize;
-use sysmedic_core::Snapshot;
+use sysmedic_core::alert::Alert;
+use sysmedic_core::finding::Severity;
+use sysmedic_core::{HealthReport, Snapshot};
+use sysmedic_history::HistoryEntry;
 
 fn human(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
@@ -99,6 +102,88 @@ pub fn network() -> Result<()> {
             }
         }
         _ => println!("  {}", "no listening TCP ports found".dimmed()),
+    }
+    Ok(())
+}
+
+fn full_report() -> HealthReport {
+    sysmedic_core::Engine::new()
+        .with_collectors(sysmedic_collectors::default_collectors())
+        .with_diagnostics(sysmedic_diagnostics::default_diagnostics())
+        .run()
+}
+
+/// `sysmedic monitor`: run a checkup, record it in history, and fire a desktop
+/// notification for each active alert. This is what the scheduled timer runs.
+pub fn monitor(quiet: bool) -> Result<()> {
+    let report = full_report();
+
+    // Record history (best-effort — a monitor run should not fail on I/O).
+    let entry = HistoryEntry::from_report(&report);
+    if let Err(e) = sysmedic_history::append(sysmedic_history::default_path(), &entry) {
+        eprintln!("warning: could not record history: {e}");
+    }
+
+    let alerts = sysmedic_core::alert::evaluate(&report.snapshot);
+    for alert in &alerts {
+        notify(alert);
+    }
+
+    if !quiet {
+        println!(
+            "Health score: {}/100 ({}). {} alert(s).",
+            report.score,
+            report.grade,
+            alerts.len()
+        );
+        for a in &alerts {
+            println!("  {} {}: {}", "!".yellow(), a.title.bold(), a.body);
+        }
+    }
+    Ok(())
+}
+
+/// Send a desktop notification via `notify-send` (no-op if unavailable).
+fn notify(alert: &Alert) {
+    let urgency = match alert.urgency {
+        Severity::Critical | Severity::High => "critical",
+        Severity::Medium => "normal",
+        _ => "low",
+    };
+    let _ = Command::new("notify-send")
+        .args([
+            "--app-name=SysMedic",
+            &format!("--urgency={urgency}"),
+            &alert.title,
+            &alert.body,
+        ])
+        .status();
+}
+
+/// `sysmedic history`: show the recorded health-score trend.
+pub fn history() -> Result<()> {
+    let entries = sysmedic_history::load(sysmedic_history::default_path());
+    if entries.is_empty() {
+        println!("No history yet. Run `sysmedic monitor` or enable `sysmedic schedule daily`.");
+        return Ok(());
+    }
+    println!("{}", "Health-score history".bold());
+    println!("  {}", sysmedic_history::sparkline(&entries, 40).cyan());
+    if let Some(delta) = sysmedic_history::trend_delta(&entries) {
+        let text = format!("{delta:+}");
+        let colored = if delta >= 0 {
+            text.green().to_string()
+        } else {
+            text.red().to_string()
+        };
+        println!("  Trend since first record: {colored}");
+    }
+    println!();
+    for e in entries.iter().rev().take(10) {
+        println!(
+            "  {}  {:>3}/100  {:<10} {} finding(s)",
+            e.at, e.score, e.grade, e.findings
+        );
     }
     Ok(())
 }

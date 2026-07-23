@@ -1,13 +1,72 @@
-//! Render a [`HealthReport`] as JSON, Markdown or a standalone HTML page.
-//! (PDF arrives in M5 by printing the HTML report.)
+//! Render a [`HealthReport`] as JSON, Markdown, a standalone HTML page, or a
+//! PDF (by printing the HTML through a headless browser).
 
 use std::fmt::Write as _;
+use std::path::Path;
 
 use sysmedic_core::HealthReport;
 use sysmedic_knowledge::{explain, Lang};
 
 pub fn to_json(report: &HealthReport) -> String {
     serde_json::to_string_pretty(report).expect("HealthReport serializes")
+}
+
+/// Headless-browser / converter candidates tried in order for PDF export.
+const PDF_TOOLS: &[(&str, &[&str])] = &[
+    (
+        "chromium",
+        &["--headless", "--no-sandbox", "--print-to-pdf={out}", "{in}"],
+    ),
+    (
+        "chromium-browser",
+        &["--headless", "--no-sandbox", "--print-to-pdf={out}", "{in}"],
+    ),
+    (
+        "google-chrome",
+        &["--headless", "--no-sandbox", "--print-to-pdf={out}", "{in}"],
+    ),
+    ("wkhtmltopdf", &["{in}", "{out}"]),
+];
+
+/// Write a PDF of `report` to `out_path` by rendering HTML and converting it
+/// with whatever headless browser / wkhtmltopdf is installed. Returns an error
+/// (naming the options) when none is available, so the caller can fall back to
+/// HTML.
+pub fn write_pdf(report: &HealthReport, lang: Lang, out_path: &Path) -> Result<(), String> {
+    let html = to_html(report, lang);
+    let tmp = std::env::temp_dir().join("sysmedic-report.html");
+    std::fs::write(&tmp, html).map_err(|e| format!("cannot write temp HTML: {e}"))?;
+    let (tmp_s, out_s) = (tmp.to_string_lossy(), out_path.to_string_lossy());
+
+    for (tool, template) in PDF_TOOLS {
+        if which(tool).is_none() {
+            continue;
+        }
+        let args: Vec<String> = template
+            .iter()
+            .map(|a| a.replace("{out}", &out_s).replace("{in}", &tmp_s))
+            .collect();
+        let ok = std::process::Command::new(tool)
+            .args(&args)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok && out_path.exists() {
+            return Ok(());
+        }
+    }
+    Err("no PDF converter found (install chromium or wkhtmltopdf); \
+         the HTML report was produced instead"
+        .to_string())
+}
+
+fn which(program: &str) -> Option<()> {
+    std::process::Command::new(program)
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|_| ())
 }
 
 pub fn to_markdown(report: &HealthReport, lang: Lang) -> String {

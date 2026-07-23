@@ -18,6 +18,7 @@ sysmedic-knowledge = { workspace = true }
 sysmedic-report = { workspace = true }
 sysmedic-fixes = { workspace = true }
 sysmedic-diskscan = { workspace = true }
+sysmedic-history = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 owo-colors = { workspace = true }

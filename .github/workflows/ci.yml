@@ -36,3 +36,8 @@ jobs:
         run: |
           ./target/release/sysmedic disk . --depth 1 --top 5
           ./target/release/sysmedic network
+      - name: Smoke-run follow-up tools
+        run: |
+          ./target/release/sysmedic monitor --quiet
+          ./target/release/sysmedic history
+          ./target/release/sysmedic schedule status
