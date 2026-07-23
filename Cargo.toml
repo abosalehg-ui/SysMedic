@@ -7,7 +7,8 @@ version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/abosalehg-ui/SysMedic"
-authors = ["SysMedic contributors"]
+homepage = "https://github.com/abosalehg-ui/SysMedic"
+authors = ["abosalehg-ui <ar0.history@gmail.com>"]
 
 [workspace.dependencies]
 sysmedic-core = { path = "crates/sysmedic-core" }

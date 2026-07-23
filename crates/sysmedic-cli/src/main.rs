@@ -13,7 +13,11 @@ use sysmedic_knowledge::Lang;
 #[command(
     name = "sysmedic",
     version,
-    about = "SysMedic — a doctor for your Linux system: checkup, diagnose, explain, prescribe."
+    about = "SysMedic — a doctor for your Linux system: checkup, diagnose, explain, prescribe.",
+    after_help = "Author:  abosalehg-ui <ar0.history@gmail.com>\n\
+                  Source:  https://github.com/abosalehg-ui/SysMedic\n\
+                  Issues:  https://github.com/abosalehg-ui/SysMedic/issues\n\
+                  License: GPL-3.0-or-later"
 )]
 struct Cli {
     #[command(subcommand)]

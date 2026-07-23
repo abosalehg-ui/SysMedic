@@ -23,6 +23,8 @@ pub struct Strings {
     pub apply: &'static str,
     pub reversible_yes: &'static str,
     pub reversible_no: &'static str,
+    pub about: &'static str,
+    pub app_comment: &'static str,
 }
 
 impl Strings {
@@ -45,6 +47,9 @@ impl Strings {
                 apply: "Apply",
                 reversible_yes: "This fix can be undone.",
                 reversible_no: "This fix cannot be undone.",
+                about: "About SysMedic",
+                app_comment:
+                    "A doctor for your Linux system: checkup, diagnose, explain, prescribe.",
             },
             Lang::Ar => &Strings {
                 health_score: "الدرجة الصحية",
@@ -63,6 +68,8 @@ impl Strings {
                 apply: "تطبيق",
                 reversible_yes: "يمكن التراجع عن هذا الإصلاح.",
                 reversible_no: "لا يمكن التراجع عن هذا الإصلاح.",
+                about: "عن SysMedic",
+                app_comment: "طبيب لنظام لينكس: فحص، تشخيص، شرح، ووصف علاج آمن.",
             },
         }
     }

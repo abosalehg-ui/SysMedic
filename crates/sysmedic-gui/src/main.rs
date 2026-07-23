@@ -8,7 +8,7 @@
 mod ui;
 mod viewmodel;
 
-const APP_ID: &str = "io.github.abosalehg_ui.SysMedic";
+pub const APP_ID: &str = "io.github.abosalehg_ui.SysMedic";
 
 fn main() -> gtk::glib::ExitCode {
     use gtk::prelude::*;

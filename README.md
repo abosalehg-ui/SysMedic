@@ -4,6 +4,20 @@
 language, prescribes safe fixes, and follows up. Not another cleaner, not
 another monitor: the app you install first on a fresh Ubuntu.
 
+## Screenshots
+
+| Dashboard | Findings & one-click fix |
+|---|---|
+| ![Health-score dashboard](docs/screenshots/dashboard.png) | ![Findings list with an Apply-fix button](docs/screenshots/findings-fix.png) |
+
+| Safe-fix confirmation | Arabic (RTL) |
+|---|---|
+| ![Fix confirmation dialog showing commands, affected paths and reversibility](docs/screenshots/fix-confirm.png) | ![Arabic dashboard](docs/screenshots/dashboard-ar.png) |
+
+The confirmation dialog is the heart of the *prescribe* step: before anything
+changes you see exactly what will run, which paths it touches, its risk, and
+whether it can be undone.
+
 ```
   Health score: 97/100  (Excellent)
 
@@ -93,6 +107,14 @@ retained snap revisions, remove unused Flatpak runtimes, enable the firewall.
   [docs/COMPETITIVE-ANALYSIS.md](docs/COMPETITIVE-ANALYSIS.md)
 - **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
 - **License:** GPL-3.0-or-later
+
+## Author
+
+Created and maintained by **abosalehg-ui**.
+
+- Repository: <https://github.com/abosalehg-ui/SysMedic>
+- Issues: <https://github.com/abosalehg-ui/SysMedic/issues>
+- Contact: <ar0.history@gmail.com>
 
 ---
 

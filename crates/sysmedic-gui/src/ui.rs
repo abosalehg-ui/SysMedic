@@ -7,12 +7,15 @@ use std::process::Command;
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::glib;
+use gtk::{gio, glib};
 use sysmedic_core::fix::FixPlan;
 use sysmedic_core::{Engine, HealthReport};
 use sysmedic_knowledge::Lang;
 
 use crate::viewmodel::{self, Strings};
+
+const REPO_URL: &str = "https://github.com/abosalehg-ui/SysMedic";
+const ISSUES_URL: &str = "https://github.com/abosalehg-ui/SysMedic/issues";
 
 const DEFAULT_HELPER: &str = "/usr/libexec/sysmedic-fix-helper";
 
@@ -56,6 +59,16 @@ pub fn build_window(app: &adw::Application) {
     header.pack_start(&refresh);
     header.pack_end(&spinner);
 
+    // Primary menu with an "About SysMedic" entry (author + repo live there).
+    let menu = gio::Menu::new();
+    menu.append(Some(strings.about), Some("app.about"));
+    let menu_button = gtk::MenuButton::builder()
+        .icon_name("open-menu-symbolic")
+        .menu_model(&menu)
+        .tooltip_text(strings.about)
+        .build();
+    header.pack_end(&menu_button);
+
     let clamp = adw::Clamp::builder()
         .maximum_size(760)
         .margin_top(24)
@@ -81,6 +94,14 @@ pub fn build_window(app: &adw::Application) {
         .default_height(860)
         .content(&toolbar_view)
         .build();
+
+    // Wire the "app.about" action to show the About dialog.
+    let about_action = gio::SimpleAction::new("about", None);
+    about_action.connect_activate({
+        let window = window.clone();
+        move |_, _| show_about(&window, lang)
+    });
+    app.add_action(&about_action);
 
     // `run_checkup` needs to reference itself so a finished fix can trigger a
     // re-scan. A shared cell breaks the chicken-and-egg of the self-reference.
@@ -133,6 +154,26 @@ pub fn build_window(app: &adw::Application) {
     run_checkup();
 
     window.present();
+}
+
+/// The About dialog: app identity, author, repository and contact.
+fn show_about(parent: &adw::ApplicationWindow, lang: Lang) {
+    let strings = Strings::for_lang(lang);
+    let about = adw::AboutDialog::builder()
+        .application_name("SysMedic")
+        .application_icon(crate::APP_ID)
+        .version(env!("CARGO_PKG_VERSION"))
+        .developer_name("abosalehg-ui")
+        .developers(["abosalehg-ui <ar0.history@gmail.com>"])
+        .comments(strings.app_comment)
+        .website(REPO_URL)
+        .issue_url(ISSUES_URL)
+        .support_url(ISSUES_URL)
+        .license_type(gtk::License::Gpl30)
+        .copyright("© 2026 abosalehg-ui")
+        .build();
+    about.add_link("Source code", REPO_URL);
+    about.present(Some(parent));
 }
 
 /// Ask polkit (via pkexec) to run the helper for `fix_id`, then re-scan.
