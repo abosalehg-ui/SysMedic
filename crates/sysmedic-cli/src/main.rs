@@ -1,5 +1,6 @@
 mod fix;
 mod text;
+mod tools;
 
 use std::fs;
 use std::path::PathBuf;
@@ -64,6 +65,19 @@ enum Command {
         #[arg(long)]
         yes: bool,
     },
+    /// Analyze disk usage: largest subdirectories of a path (default: cwd)
+    Disk {
+        /// Directory to scan
+        path: Option<String>,
+        /// How many levels deep to keep in the tree
+        #[arg(long, default_value_t = 4)]
+        depth: u32,
+        /// How many top entries to show
+        #[arg(long, default_value_t = 15)]
+        top: usize,
+    },
+    /// Show network status: route, DNS, listening ports and latency
+    Network,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -150,6 +164,8 @@ fn main() -> Result<()> {
             None => fix::list()?,
         },
         Command::Undo { yes } => fix::undo(yes)?,
+        Command::Disk { path, depth, top } => tools::disk(path, depth, top)?,
+        Command::Network => tools::network()?,
     }
     Ok(())
 }

@@ -842,6 +842,7 @@ dependencies = [
  "sysmedic-collectors",
  "sysmedic-core",
  "sysmedic-diagnostics",
+ "sysmedic-diskscan",
  "sysmedic-fixes",
  "sysmedic-knowledge",
  "sysmedic-report",
@@ -851,6 +852,7 @@ dependencies = [
 name = "sysmedic-collectors"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "sysmedic-core",
 ]
 
@@ -879,6 +881,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sysmedic-diskscan"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tempfile",
+]
+
+[[package]]
 name = "sysmedic-fixes"
 version = "0.1.0"
 dependencies = [
@@ -899,6 +909,7 @@ dependencies = [
  "sysmedic-collectors",
  "sysmedic-core",
  "sysmedic-diagnostics",
+ "sysmedic-diskscan",
  "sysmedic-fixes",
  "sysmedic-knowledge",
 ]

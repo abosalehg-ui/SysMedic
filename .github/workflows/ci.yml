@@ -32,3 +32,7 @@ jobs:
         run: ./target/release/sysmedic checkup --format json | head -c 2000
       - name: Smoke-run fix listing
         run: ./target/release/sysmedic fix
+      - name: Smoke-run advanced tools
+        run: |
+          ./target/release/sysmedic disk . --depth 1 --top 5
+          ./target/release/sysmedic network

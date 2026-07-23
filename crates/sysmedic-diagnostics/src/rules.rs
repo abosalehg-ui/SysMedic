@@ -516,6 +516,131 @@ pub mod security {
         )
         .with_fix_hint("sudo ufw enable")]
     }
+
+    pub fn ssh_password_auth(s: &Snapshot) -> Vec<Finding> {
+        let Some(sec) = &s.security else {
+            return vec![];
+        };
+        if sec.ssh_password_auth != Some(true) {
+            return vec![];
+        }
+        vec![Finding::new(
+            "security.ssh_password_auth",
+            Category::Security,
+            Severity::Medium,
+            "SSH accepts password logins",
+            "sshd allows password authentication, which is vulnerable to brute-force guessing.",
+        )
+        .with_fix_hint("use key-based auth and set 'PasswordAuthentication no'")]
+    }
+
+    pub fn exposed_ports(s: &Snapshot) -> Vec<Finding> {
+        let Some(ports) = &s.ports else { return vec![] };
+        let exposed: Vec<String> = ports
+            .iter()
+            .filter(|p| p.exposed)
+            .map(|p| format!("{}/{} on {}", p.port, p.proto, p.address))
+            .collect();
+        if exposed.is_empty() {
+            return vec![];
+        }
+        vec![Finding::new(
+            "security.exposed_ports",
+            Category::Security,
+            Severity::Low,
+            format!("{} service(s) listening on the network", exposed.len()),
+            "These ports accept connections from other machines. Make sure each is intended, and let the firewall cover the rest.",
+        )
+        .with_evidence(exposed)
+        .with_fix_hint("review with `ss -tulnp`; enable ufw to gate access")]
+    }
+}
+
+pub mod smart {
+    use sysmedic_core::{Category, Finding, Severity, Snapshot};
+
+    pub fn failing(s: &Snapshot) -> Vec<Finding> {
+        let Some(devices) = &s.smart else {
+            return vec![];
+        };
+        devices
+            .iter()
+            .filter(|d| d.health_passed == Some(false))
+            .map(|d| {
+                Finding::new(
+                    "smart.failing",
+                    Category::Storage,
+                    Severity::Critical,
+                    format!("Drive {} reports SMART failure", d.device),
+                    format!(
+                        "{} ({}) failed its SMART self-assessment — the disk is predicting imminent failure.",
+                        d.device, d.model
+                    ),
+                )
+                .with_fix_hint("back up immediately and plan to replace the drive")
+            })
+            .collect()
+    }
+
+    pub fn reallocated_sectors(s: &Snapshot) -> Vec<Finding> {
+        let Some(devices) = &s.smart else {
+            return vec![];
+        };
+        devices
+            .iter()
+            .filter_map(|d| {
+                let count = d.reallocated_sectors?;
+                if count == 0 {
+                    return None;
+                }
+                let severity = if count >= 50 {
+                    Severity::High
+                } else {
+                    Severity::Medium
+                };
+                Some(
+                    Finding::new(
+                        "smart.reallocated_sectors",
+                        Category::Storage,
+                        severity,
+                        format!("{} has {} reallocated sector(s)", d.device, count),
+                        "The drive has remapped bad sectors. A rising count signals physical degradation.",
+                    )
+                    .with_fix_hint("back up important data and monitor the count over time"),
+                )
+            })
+            .collect()
+    }
+
+    pub fn ssd_wear(s: &Snapshot) -> Vec<Finding> {
+        let Some(devices) = &s.smart else {
+            return vec![];
+        };
+        devices
+            .iter()
+            .filter_map(|d| {
+                let wear = d.wear_percent?;
+                if wear < 80 {
+                    return None;
+                }
+                let severity = if wear >= 100 {
+                    Severity::High
+                } else {
+                    Severity::Medium
+                };
+                Some(
+                    Finding::new(
+                        "smart.ssd_wear",
+                        Category::Storage,
+                        severity,
+                        format!("SSD {} is {}% through its rated write life", d.device, wear),
+                        "NVMe wear indicator is high; the drive is nearing the endurance it was rated for.",
+                    )
+                    .with_fix_hint("ensure backups; plan replacement as it approaches 100%"),
+                )
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -623,6 +748,7 @@ mod tests {
         s.security = Some(SecurityInfo {
             firewall_active: Some(true),
             ssh_permit_root_login: Some(false),
+            ssh_password_auth: None,
         });
         assert!(super::security::ssh_root_login(&s).is_empty());
         s.security.as_mut().unwrap().ssh_permit_root_login = Some(true);
@@ -703,7 +829,23 @@ mod tests {
         s.security = Some(SecurityInfo {
             firewall_active: Some(false),
             ssh_permit_root_login: Some(true),
+            ssh_password_auth: Some(true),
         });
+        s.smart = Some(vec![SmartDevice {
+            device: "/dev/sda".into(),
+            model: "Test SSD".into(),
+            health_passed: Some(false),
+            temperature_c: Some(40),
+            reallocated_sectors: Some(60),
+            wear_percent: Some(95),
+            power_on_hours: Some(1000),
+        }]);
+        s.ports = Some(vec![ListeningPort {
+            proto: "tcp",
+            address: "0.0.0.0".into(),
+            port: 22,
+            exposed: true,
+        }]);
 
         let mut fired: Vec<String> = vec![];
         for rule in crate::default_diagnostics() {

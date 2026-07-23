@@ -17,6 +17,7 @@ sysmedic-diagnostics = { path = "crates/sysmedic-diagnostics" }
 sysmedic-knowledge = { path = "crates/sysmedic-knowledge" }
 sysmedic-fixes = { path = "crates/sysmedic-fixes" }
 sysmedic-report = { path = "crates/sysmedic-report" }
+sysmedic-diskscan = { path = "crates/sysmedic-diskscan" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

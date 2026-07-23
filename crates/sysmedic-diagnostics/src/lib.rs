@@ -65,6 +65,17 @@ pub fn default_diagnostics() -> Vec<Box<dyn Diagnostic>> {
             "security-firewall-inactive",
             rules::security::firewall_inactive
         ),
+        rule!(
+            "security-ssh-password-auth",
+            rules::security::ssh_password_auth
+        ),
+        rule!("security-exposed-ports", rules::security::exposed_ports),
+        rule!("smart-failing", rules::smart::failing),
+        rule!(
+            "smart-reallocated-sectors",
+            rules::smart::reallocated_sectors
+        ),
+        rule!("smart-ssd-wear", rules::smart::ssd_wear),
     ]
 }
 
@@ -93,4 +104,9 @@ pub const FINDING_IDS: &[&str] = &[
     "network.no_dns",
     "security.ssh_root_login",
     "security.firewall_inactive",
+    "security.ssh_password_auth",
+    "security.exposed_ports",
+    "smart.failing",
+    "smart.reallocated_sectors",
+    "smart.ssd_wear",
 ];

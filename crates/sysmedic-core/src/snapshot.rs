@@ -22,6 +22,8 @@ pub struct Snapshot {
     pub battery: Option<BatteryInfo>,
     pub snap: Option<SnapInfo>,
     pub flatpak: Option<FlatpakInfo>,
+    pub smart: Option<Vec<SmartDevice>>,
+    pub ports: Option<Vec<ListeningPort>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub collection_errors: Vec<String>,
 }
@@ -164,6 +166,34 @@ pub struct SecurityInfo {
     pub firewall_active: Option<bool>,
     /// `None` when sshd is not installed / config unreadable.
     pub ssh_permit_root_login: Option<bool>,
+    /// Effective `PasswordAuthentication`; `None` when sshd absent/unreadable.
+    pub ssh_password_auth: Option<bool>,
+}
+
+/// One disk's SMART health, as reported by `smartctl`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SmartDevice {
+    pub device: String,
+    pub model: String,
+    /// Overall SMART self-assessment; `None` if the drive didn't report it.
+    pub health_passed: Option<bool>,
+    pub temperature_c: Option<i64>,
+    /// ATA "Reallocated_Sector_Ct" raw value (bad sectors remapped).
+    pub reallocated_sectors: Option<u64>,
+    /// NVMe "percentage_used" wear indicator (0–100+, 100 = rated life used).
+    pub wear_percent: Option<u64>,
+    pub power_on_hours: Option<u64>,
+}
+
+/// A socket in the LISTEN state, from `/proc/net/tcp{,6}`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ListeningPort {
+    pub proto: &'static str,
+    pub address: String,
+    pub port: u16,
+    /// True when bound to a wildcard/all-interfaces address (0.0.0.0 or ::),
+    /// i.e. reachable from the network rather than only localhost.
+    pub exposed: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize)]

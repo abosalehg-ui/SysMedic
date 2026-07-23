@@ -308,3 +308,73 @@
     impact: "على الشبكات غير الموثوقة (مقاهٍ، مطارات) تستطيع الأجهزة الأخرى فحص منافذك المفتوحة."
     remedy: "نفّذ sudo ufw enable — السياسة الافتراضية (منع الوارد، سماح الصادر) مناسبة لأجهزة سطح المكتب دون قواعد إضافية."
     risk_if_ignored: "أي خدمة مستمعة فيها ثغرة تبقى مكشوفة مباشرة لمن يشاركك الشبكة."
+
+- id: security.ssh_password_auth
+  en:
+    cause: "sshd is configured to accept passwords (PasswordAuthentication yes)."
+    dangerous: "Yes on any network-reachable machine: passwords can be brute-forced, keys cannot."
+    impact: "Automated bots continuously try common passwords against your SSH server."
+    remedy: "Set up SSH keys, then set 'PasswordAuthentication no' in /etc/ssh/sshd_config and reload sshd."
+    risk_if_ignored: "A weak or reused password can be guessed, handing over a shell on your machine."
+  ar:
+    cause: "sshd مضبوط لقبول كلمات المرور (PasswordAuthentication yes)."
+    dangerous: "نعم على أي جهاز يمكن الوصول إليه شبكيًا: كلمات المرور قابلة للتخمين، أما المفاتيح فلا."
+    impact: "بوتات آلية تجرّب باستمرار كلمات مرور شائعة على خادم SSH لديك."
+    remedy: "أعدّ مفاتيح SSH، ثم اضبط 'PasswordAuthentication no' في ‎/etc/ssh/sshd_config وأعد تحميل sshd."
+    risk_if_ignored: "كلمة مرور ضعيفة أو مُعاد استخدامها قد تُخمّن فتُسلّم صدفة (shell) على جهازك."
+
+- id: security.exposed_ports
+  en:
+    cause: "One or more services bound to all network interfaces (0.0.0.0 or ::) rather than only localhost."
+    dangerous: "Depends on the service: a database or debug server exposed to the LAN is risky; a print service less so."
+    impact: "Other machines on your network can connect to these services directly."
+    remedy: "Bind services to 127.0.0.1 where possible, and enable the firewall (ufw) to gate the rest."
+    risk_if_ignored: "Any vulnerability in an exposed service is reachable by everyone sharing your network."
+  ar:
+    cause: "خدمة أو أكثر مرتبطة بكل واجهات الشبكة (0.0.0.0 أو ::) بدلًا من localhost فقط."
+    dangerous: "حسب الخدمة: قاعدة بيانات أو خادم تنقيح مكشوف للشبكة خطر؛ خدمة طباعة أقل خطورة."
+    impact: "تستطيع الأجهزة الأخرى على شبكتك الاتصال بهذه الخدمات مباشرة."
+    remedy: "اربط الخدمات بـ 127.0.0.1 حيثما أمكن، وفعّل الجدار الناري (ufw) لضبط الباقي."
+    risk_if_ignored: "أي ثغرة في خدمة مكشوفة تصبح في متناول كل من يشاركك الشبكة."
+
+- id: smart.failing
+  en:
+    cause: "The drive's own SMART self-assessment failed — its firmware predicts imminent failure."
+    dangerous: "Yes, critically: this is the strongest warning a disk can give before it dies."
+    impact: "Data loss is likely and may be sudden; the drive can become unreadable at any time."
+    remedy: "Back up everything now, then replace the drive. Do not trust it with new data."
+    risk_if_ignored: "Total, possibly unrecoverable data loss when the drive fails."
+  ar:
+    cause: "فشل التقييم الذاتي SMART للقرص — تتنبأ برمجيته بعطل وشيك."
+    dangerous: "نعم، حرج: هذا أقوى تحذير يعطيه القرص قبل أن يتعطل."
+    impact: "فقدان البيانات محتمل وقد يكون مفاجئًا؛ قد يصبح القرص غير قابل للقراءة في أي لحظة."
+    remedy: "انسخ كل شيء احتياطيًا الآن ثم استبدل القرص. لا تأتمنه على بيانات جديدة."
+    risk_if_ignored: "فقدان كامل للبيانات وربما غير قابل للاسترجاع عند تعطل القرص."
+
+- id: smart.reallocated_sectors
+  en:
+    cause: "The drive found bad sectors and remapped them to spare ones; the count records how many."
+    dangerous: "A few is tolerable; a rising or large count signals ongoing physical wear."
+    impact: "Growing reallocations often precede failure and can cause read errors."
+    remedy: "Ensure backups are current and watch the count with SMART over the coming weeks."
+    risk_if_ignored: "The drive may deteriorate to failure, risking data loss."
+  ar:
+    cause: "وجد القرص قطاعات تالفة وأعاد تعيينها إلى احتياطية؛ والعدد يسجّل كم قطاعًا."
+    dangerous: "القليل محتمَل؛ العدد المتزايد أو الكبير يشير إلى تآكل مادي مستمر."
+    impact: "تزايد إعادة التعيين غالبًا يسبق العطل وقد يسبب أخطاء قراءة."
+    remedy: "تأكد من حداثة النسخ الاحتياطي وراقب العدد عبر SMART في الأسابيع القادمة."
+    risk_if_ignored: "قد يتدهور القرص حتى العطل مخاطرًا بفقدان البيانات."
+
+- id: smart.ssd_wear
+  en:
+    cause: "SSDs have a finite number of writes; the wear indicator shows how much of that rated life is used."
+    dangerous: "Not immediately, but past ~90% the drive is near its endurance limit."
+    impact: "As it nears 100% the SSD may go read-only or start failing writes."
+    remedy: "Keep backups current and plan a replacement before it reaches 100%."
+    risk_if_ignored: "The SSD will eventually stop accepting writes, and data may be lost."
+  ar:
+    cause: "لأقراص SSD عدد محدود من عمليات الكتابة؛ ومؤشر التآكل يبيّن كم استُهلك من العمر المقدّر."
+    dangerous: "ليست خطيرة فورًا، لكن بعد ~90% يقترب القرص من حد تحمّله."
+    impact: "مع اقترابه من 100% قد يصبح SSD للقراءة فقط أو يبدأ بفشل الكتابة."
+    remedy: "أبقِ النسخ الاحتياطي حديثًا وخطط للاستبدال قبل بلوغه 100%."
+    risk_if_ignored: "سيتوقف SSD في النهاية عن قبول الكتابة وقد تُفقد البيانات."

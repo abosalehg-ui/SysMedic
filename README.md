@@ -10,13 +10,14 @@ another monitor: the app you install first on a fresh Ubuntu.
 |---|---|
 | ![Health-score dashboard](docs/screenshots/dashboard.png) | ![Findings list with an Apply-fix button](docs/screenshots/findings-fix.png) |
 
-| Safe-fix confirmation | Arabic (RTL) |
+| Safe-fix confirmation | Disk Usage treemap |
 |---|---|
-| ![Fix confirmation dialog showing commands, affected paths and reversibility](docs/screenshots/fix-confirm.png) | ![Arabic dashboard](docs/screenshots/dashboard-ar.png) |
+| ![Fix confirmation dialog showing commands, affected paths and reversibility](docs/screenshots/fix-confirm.png) | ![Disk usage treemap of the home folder](docs/screenshots/disk-treemap.png) |
 
 The confirmation dialog is the heart of the *prescribe* step: before anything
 changes you see exactly what will run, which paths it touches, its risk, and
-whether it can be undone.
+whether it can be undone. The Disk Usage page renders a squarified treemap of
+the folders eating your space. *(Also available in Arabic / RTL.)*
 
 ```
   Health score: 97/100  (Excellent)
@@ -68,11 +69,25 @@ sysmedic checkup --format json                            # machine-readable
 sysmedic checkup --format html --output report.html       # shareable report
 sysmedic explain storage.disk_nearly_full --lang ar       # explain any finding
 sysmedic checks                                           # list all rules
+sysmedic disk ~                                           # largest folders
+sysmedic network                                          # route, DNS, ports
 ```
 
 Requires Rust stable; runs on any modern Linux (Ubuntu/Debian gets the fullest
 coverage). Anything unavailable — no battery, no systemd in a container — is
 skipped gracefully and reported as a skipped check.
+
+## Advanced tools (M4)
+
+- **Disk analyzer** — a size tree with a squarified treemap in the GUI and a
+  bar breakdown on the CLI (`sysmedic disk [path]`).
+- **Disk health** — SMART self-assessment, reallocated sectors and SSD wear
+  become explained findings.
+- **Security audit** — services listening beyond localhost, SSH password logins
+  and root login, inactive firewall and pending security updates, all with
+  remedies.
+- **Network** — `sysmedic network` shows the default route, DNS, listening
+  ports (localhost vs network-exposed) and latency.
 
 ## Safe fixes (M3)
 
