@@ -52,10 +52,8 @@ pub fn parse_duration(s: &str) -> Option<f64> {
             (60.0, v)
         } else if let Some(v) = part.strip_suffix('h') {
             (3600.0, v)
-        } else if let Some(v) = part.strip_suffix('s') {
-            (1.0, v)
         } else {
-            return None;
+            (1.0, part.strip_suffix('s')?)
         };
         total += trimmed.parse::<f64>().ok()? * mult;
         matched = true;

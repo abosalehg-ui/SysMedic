@@ -22,7 +22,7 @@ impl Collector for LogCollector {
             large_files: Vec::new(),
         };
         find_large_files(Path::new("/var/log"), 3, &mut info.large_files);
-        info.large_files.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+        info.large_files.sort_by_key(|f| std::cmp::Reverse(f.bytes));
         info.large_files.truncate(10);
         snapshot.logs = Some(info);
     }

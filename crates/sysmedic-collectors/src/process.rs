@@ -49,7 +49,7 @@ impl Collector for ProcessCollector {
                 });
             }
         }
-        procs.sort_by(|a, b| b.rss_kb.cmp(&a.rss_kb));
+        procs.sort_by_key(|p| std::cmp::Reverse(p.rss_kb));
         procs.truncate(5);
         snapshot.processes = Some(ProcessStats {
             total,
