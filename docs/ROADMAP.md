@@ -13,11 +13,16 @@ issues), CI (fmt + clippy + tests + build), GPL-3.0.
 - `sysmedic checkup` (text/JSON/Markdown/HTML), `checks`, `explain`
 - Unit tests for every parser and rule; CI green
 
-## M2 — Desktop app (GTK4/libadwaita)
-- Application shell, dashboard with health-score gauge and category bars
-- Findings list with severity badges; explanation pane (the five questions)
-- Run checkup from the UI; dark/light via libadwaita; ar/en localization
-- MVVM: composite templates + view models over the async engine API
+## M2 — Desktop app (GTK4/libadwaita) ✅
+- Application shell (AdwToolbarView + HeaderBar), health-score hero with
+  color-coded grade, category rows with level bars
+- Findings list of expander rows: severity badges, the five explanation
+  questions per finding, evidence, suggested command
+- Checkup runs on a worker thread (`gio::spawn_blocking`) — the UI never
+  blocks; a refresh button re-runs it
+- Dark/light automatic via libadwaita; ar/en strings built in (full gettext
+  in M6); desktop entry + AppStream metainfo in `data/`
+- MVVM-lite: all presentation logic in a pure, unit-tested `viewmodel` module
 
 ## M3 — Auto Fix, safely
 - `sysmedicd` D-Bus system helper + polkit policy (GUI never runs as root)

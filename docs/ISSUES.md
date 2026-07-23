@@ -32,11 +32,15 @@ initial M0/M1 increment; the rest are open work.
     home ownership)
 
 ## M2 — GUI
-20. GTK4/libadwaita application shell + app icon + .desktop file
-21. Dashboard: score gauge, category bars, "Run checkup" flow
-22. Findings page: severity badges, filters, explanation pane (5 questions)
-23. ar/en localization (gettext) + RTL audit
-24. CI: GUI build job with GTK dev dependencies
+20. ✅ GTK4/libadwaita application shell + .desktop file + AppStream metainfo
+    (app icon asset still pending)
+21. ✅ Dashboard: score hero, category level bars, "Run checkup" flow on a
+    worker thread
+22. ✅ Findings list: severity badges, explanation pane (5 questions),
+    evidence, suggested command (filters pending)
+23. ar/en localization: built-in strings shipped; gettext migration + full
+    RTL audit pending
+24. ✅ CI: GTK dev dependencies installed in the workflow
 
 ## M3 — Auto Fix
 25. `sysmedicd` D-Bus system service + polkit policy
