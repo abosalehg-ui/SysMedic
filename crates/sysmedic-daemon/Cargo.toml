@@ -1,0 +1,11 @@
+[package]
+name = "sysmedic-daemon"
+description = "sysmedicd — privileged D-Bus helper, scheduler and notifications (lands in M3/M5)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "sysmedicd"
+path = "src/main.rs"

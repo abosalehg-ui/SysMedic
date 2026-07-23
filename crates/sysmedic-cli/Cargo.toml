@@ -1,0 +1,21 @@
+[package]
+name = "sysmedic-cli"
+description = "SysMedic command-line interface: checkup, reports and explanations"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "sysmedic"
+path = "src/main.rs"
+
+[dependencies]
+sysmedic-core = { workspace = true }
+sysmedic-collectors = { workspace = true }
+sysmedic-diagnostics = { workspace = true }
+sysmedic-knowledge = { workspace = true }
+sysmedic-report = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+owo-colors = { workspace = true }

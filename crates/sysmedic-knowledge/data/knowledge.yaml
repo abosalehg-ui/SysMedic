@@ -1,0 +1,296 @@
+# SysMedic knowledge base — one entry per finding id.
+# Each explanation answers: cause, dangerous?, impact, remedy, risk if ignored.
+
+- id: storage.disk_nearly_full
+  en:
+    cause: "The filesystem has accumulated data — packages, caches, logs, snaps or user files — faster than it was cleaned up."
+    dangerous: "Yes when above 95%: many programs, including system updates, fail or corrupt data when the disk is full."
+    impact: "Updates fail, applications crash on save, the system may not boot cleanly once completely full."
+    remedy: "Clean the APT cache (sudo apt clean), vacuum the journal (sudo journalctl --vacuum-size=200M), remove old snaps and kernels, then use a disk analyzer to find large files."
+    risk_if_ignored: "The disk will eventually reach 100% and the desktop can fail to start or lose data."
+  ar:
+    cause: "امتلأ نظام الملفات ببيانات متراكمة — حزم، ذاكرة تخزين مؤقتة، سجلات، حزم Snap أو ملفات المستخدم — أسرع مما يُنظَّف."
+    dangerous: "نعم عند تجاوز 95%: كثير من البرامج، بما فيها تحديثات النظام، تفشل أو تُتلف البيانات عند امتلاء القرص."
+    impact: "فشل التحديثات، انهيار التطبيقات عند الحفظ، وقد لا يقلع النظام بسلامة عند الامتلاء الكامل."
+    remedy: "نظّف ذاكرة APT المؤقتة (sudo apt clean)، قلّص سجل journal (sudo journalctl --vacuum-size=200M)، أزل النوى وSnaps القديمة، ثم استخدم محلل القرص للعثور على الملفات الكبيرة."
+    risk_if_ignored: "سيصل القرص إلى 100% وقد يفشل سطح المكتب في الإقلاع أو تُفقد بيانات."
+
+- id: memory.low_available
+  en:
+    cause: "Running applications (often browsers, IDEs or leaking processes) are consuming nearly all physical RAM."
+    dangerous: "Moderately: the kernel will start swapping and, in the worst case, the OOM killer terminates applications."
+    impact: "Severe slowdowns, frozen UI, applications killed without warning."
+    remedy: "Close or restart the heaviest applications (see the top-memory list in the report). Consider adding RAM or enabling zram."
+    risk_if_ignored: "The system will thrash or the kernel will kill processes, possibly losing unsaved work."
+  ar:
+    cause: "التطبيقات العاملة (غالبًا المتصفحات أو بيئات التطوير أو عمليات بها تسريب ذاكرة) تستهلك كل الذاكرة الفعلية تقريبًا."
+    dangerous: "متوسطة الخطورة: سيبدأ النظام بالتبديل إلى Swap، وفي أسوأ الحالات يقتل OOM Killer تطبيقاتك."
+    impact: "بطء شديد، تجمّد الواجهة، إنهاء تطبيقات دون تحذير."
+    remedy: "أغلق أو أعد تشغيل أثقل التطبيقات (انظر قائمة أعلى استهلاك للذاكرة في التقرير). فكّر في زيادة الذاكرة أو تفعيل zram."
+    risk_if_ignored: "سيتدهور الأداء بشدة أو يقتل النظام عمليات وقد تفقد عملًا غير محفوظ."
+
+- id: memory.swap_pressure
+  en:
+    cause: "Physical RAM is exhausted, so the kernel is pushing memory pages to the much slower swap device."
+    dangerous: "Not immediately, but it is the main cause of a 'suddenly slow' desktop."
+    impact: "Applications stutter and switching windows takes seconds while pages are read back from disk."
+    remedy: "Close memory-heavy applications; on SSD systems consider zram/zswap; add RAM if this is chronic."
+    risk_if_ignored: "Persistent sluggishness and extra wear on SSDs from constant swapping."
+  ar:
+    cause: "نفدت الذاكرة الفعلية، فيدفع النظام صفحات الذاكرة إلى قسم Swap الأبطأ بكثير."
+    dangerous: "ليست خطيرة فورًا، لكنها السبب الأول لإحساس «النظام صار بطيئًا فجأة»."
+    impact: "تقطيع في التطبيقات وثوانٍ من الانتظار عند التبديل بين النوافذ."
+    remedy: "أغلق التطبيقات الشرهة للذاكرة؛ فعّل zram/zswap على أنظمة SSD؛ وزد الذاكرة إذا تكررت المشكلة."
+    risk_if_ignored: "بطء دائم وتآكل إضافي لأقراص SSD بسبب التبديل المستمر."
+
+- id: cpu.high_load
+  en:
+    cause: "The 15-minute load average exceeds the number of CPU cores — more work is queued than the CPU can process."
+    dangerous: "Usually not, but sustained overload can hide a runaway process or crypto-miner."
+    impact: "Everything feels slow; fans spin up; battery drains quickly."
+    remedy: "Identify the offender with a process monitor (top/btop) and stop or reconfigure it."
+    risk_if_ignored: "Continued heat, noise, energy drain and shortened hardware life."
+  ar:
+    cause: "متوسط الحمل لآخر 15 دقيقة يتجاوز عدد أنوية المعالج — أعمال في الطابور أكثر مما يستطيع المعالج إنجازه."
+    dangerous: "غالبًا لا، لكن الحمل المستمر قد يخفي عملية خارجة عن السيطرة أو معدّن عملات خبيث."
+    impact: "بطء عام، ضجيج مراوح، واستنزاف سريع للبطارية."
+    remedy: "حدد العملية المسببة بمراقب مثل top/btop ثم أوقفها أو أعد ضبطها."
+    risk_if_ignored: "استمرار الحرارة والضجيج واستهلاك الطاقة وتقصير عمر العتاد."
+
+- id: thermal.overheating
+  en:
+    cause: "Poor airflow, dust buildup, degraded thermal paste, or a heavy sustained workload."
+    dangerous: "Yes above ~90°C sustained: the CPU throttles and hardware ages faster."
+    impact: "Sudden performance drops (thermal throttling), loud fans, possible emergency shutdowns."
+    remedy: "Clean dust and vents, check that fans spin, avoid soft surfaces blocking airflow, renew thermal paste on old machines."
+    risk_if_ignored: "Chronic throttling and a real risk of hardware damage or abrupt shutdowns."
+  ar:
+    cause: "تهوية سيئة، غبار متراكم، معجون حراري متدهور، أو حمل عمل ثقيل مستمر."
+    dangerous: "نعم فوق ~90°م باستمرار: يخفّض المعالج سرعته ويشيخ العتاد أسرع."
+    impact: "هبوط مفاجئ في الأداء (خنق حراري)، ضجيج مراوح، واحتمال إطفاء طارئ."
+    remedy: "نظّف الغبار والفتحات، تأكد من دوران المراوح، تجنّب الأسطح الطرية التي تسد التهوية، وجدّد المعجون الحراري للأجهزة القديمة."
+    risk_if_ignored: "خنق حراري مزمن وخطر حقيقي لتلف العتاد أو انطفاء مفاجئ."
+
+- id: processes.zombies
+  en:
+    cause: "A parent process spawned children and never read their exit status, leaving 'defunct' entries in the process table."
+    dangerous: "A few are harmless; hundreds indicate a buggy parent and can exhaust the process table."
+    impact: "Mostly cosmetic in small numbers; in large numbers new processes may fail to start."
+    remedy: "Find the parent of the zombies and restart it; zombies cannot be killed directly."
+    risk_if_ignored: "If the parent keeps leaking, zombie count grows until process creation fails."
+  ar:
+    cause: "عملية أب أنشأت عمليات فرعية ولم تقرأ حالة خروجها، فبقيت مدخلات «defunct» في جدول العمليات."
+    dangerous: "العدد القليل غير مؤذٍ؛ المئات تعني أن العملية الأب معطوبة وقد تستنفد جدول العمليات."
+    impact: "شكلي غالبًا بأعداد صغيرة؛ بأعداد كبيرة قد تفشل العمليات الجديدة في البدء."
+    remedy: "حدد العملية الأب للزومبي وأعد تشغيلها؛ لا يمكن قتل الزومبي مباشرة."
+    risk_if_ignored: "إذا استمر التسريب سيتزايد العدد حتى يفشل إنشاء عمليات جديدة."
+
+- id: services.failed
+  en:
+    cause: "A systemd unit crashed, hit its restart limit, or failed a start condition (bad config, missing file, dependency)."
+    dangerous: "Depends on the unit — a failed backup or security service matters a lot; a cosmetic service less so."
+    impact: "Whatever that unit provides is not running: backups, printing, updates, monitoring."
+    remedy: "Inspect it: systemctl status <unit> and journalctl -u <unit> -b, fix the cause, then systemctl restart <unit>."
+    risk_if_ignored: "Silent loss of the function the unit provides, often noticed only when it is needed."
+  ar:
+    cause: "انهارت وحدة systemd أو بلغت حد إعادة التشغيل أو فشل شرط بدئها (إعداد خاطئ، ملف مفقود، اعتماد ناقص)."
+    dangerous: "حسب الوحدة — فشل خدمة نسخ احتياطي أو أمان مهم جدًا؛ خدمة شكلية أقل أهمية."
+    impact: "ما تقدمه الوحدة متوقف: نسخ احتياطي، طباعة، تحديثات، مراقبة."
+    remedy: "افحصها: systemctl status <unit> ثم journalctl -u <unit> -b، أصلح السبب، ثم systemctl restart <unit>."
+    risk_if_ignored: "فقدان صامت لوظيفة الخدمة، غالبًا لا يُكتشف إلا عند الحاجة إليها."
+
+- id: boot.slow
+  en:
+    cause: "One or more units delay startup — classically NetworkManager-wait-online, snap mounts, or a misconfigured fstab entry timing out."
+    dangerous: "No, but it is one of the most annoying everyday problems."
+    impact: "You wait a minute or more from power-on to a usable desktop."
+    remedy: "Run systemd-analyze blame, then disable or fix the worst offenders (e.g. systemctl disable NetworkManager-wait-online.service if nothing needs it)."
+    risk_if_ignored: "No damage — just continued wasted time on every boot."
+  ar:
+    cause: "وحدة أو أكثر تؤخر الإقلاع — كلاسيكيًا NetworkManager-wait-online أو تركيب snap أو مدخل fstab خاطئ ينتظر مهلة."
+    dangerous: "لا، لكنها من أكثر المشاكل اليومية إزعاجًا."
+    impact: "تنتظر دقيقة أو أكثر من التشغيل حتى سطح مكتب صالح للاستخدام."
+    remedy: "شغّل systemd-analyze blame ثم عطّل أو أصلح الأسوأ (مثل systemctl disable NetworkManager-wait-online.service إن لم يعتمد عليها شيء)."
+    risk_if_ignored: "لا ضرر — فقط وقت ضائع متواصل في كل إقلاع."
+
+- id: packages.broken
+  en:
+    cause: "An installation or upgrade was interrupted (power loss, Ctrl-C, full disk) leaving dpkg's database inconsistent."
+    dangerous: "Yes for system maintenance: further installs and upgrades are usually blocked."
+    impact: "apt operations fail with errors until the state is repaired."
+    remedy: "Run sudo apt --fix-broken install, then sudo dpkg --configure -a if needed."
+    risk_if_ignored: "You stop receiving updates, including security fixes."
+  ar:
+    cause: "قوطع تثبيت أو ترقية (انقطاع كهرباء، Ctrl-C، قرص ممتلئ) فبقيت قاعدة dpkg غير متسقة."
+    dangerous: "نعم بالنسبة لصيانة النظام: التثبيت والترقيات اللاحقة غالبًا محجوبة."
+    impact: "تفشل أوامر apt بأخطاء حتى تُصلح الحالة."
+    remedy: "نفّذ sudo apt --fix-broken install ثم sudo dpkg --configure -a إن لزم."
+    risk_if_ignored: "تتوقف عن استلام التحديثات، بما فيها إصلاحات الأمان."
+
+- id: packages.old_kernels
+  en:
+    cause: "Ubuntu keeps each kernel it ever installed unless autoremove runs; images accumulate in /boot and /lib/modules."
+    dangerous: "No — until /boot fills up, at which point kernel updates start failing."
+    impact: "Hundreds of MB to several GB wasted; risk of failed updates when /boot is small."
+    remedy: "Run sudo apt autoremove --purge; Ubuntu always keeps the running kernel and one fallback."
+    risk_if_ignored: "Eventually a kernel security update fails for lack of space in /boot."
+  ar:
+    cause: "يحتفظ Ubuntu بكل نواة ثبّتها ما لم يعمل autoremove؛ تتراكم الصور في /boot و/lib/modules."
+    dangerous: "لا — حتى يمتلئ /boot فتبدأ تحديثات النواة بالفشل."
+    impact: "مئات الميغابايتات إلى عدة غيغابايتات مهدرة؛ وخطر فشل التحديثات إذا كان /boot صغيرًا."
+    remedy: "نفّذ sudo apt autoremove --purge؛ يحتفظ Ubuntu دائمًا بالنواة العاملة ونواة احتياطية."
+    risk_if_ignored: "سيفشل تحديث أمني للنواة يومًا ما لعدم وجود مساحة في /boot."
+
+- id: packages.apt_cache_large
+  en:
+    cause: "Every package apt downloads stays in /var/cache/apt/archives until cleaned."
+    dangerous: "No — the cache is purely a convenience."
+    impact: "Wasted disk space, sometimes several gigabytes."
+    remedy: "Run sudo apt clean (removes all cached .deb files, entirely safe)."
+    risk_if_ignored: "Only continued wasted space."
+  ar:
+    cause: "كل حزمة ينزّلها apt تبقى في /var/cache/apt/archives حتى تُنظَّف."
+    dangerous: "لا — الذاكرة المؤقتة مجرد وسيلة راحة."
+    impact: "مساحة قرص مهدرة، أحيانًا عدة غيغابايتات."
+    remedy: "نفّذ sudo apt clean (يحذف ملفات .deb المخزّنة، آمن تمامًا)."
+    risk_if_ignored: "فقط استمرار هدر المساحة."
+
+- id: packages.security_updates
+  en:
+    cause: "Packages with published security fixes are installed but not yet upgraded."
+    dangerous: "Yes — these fix known, often actively exploited vulnerabilities."
+    impact: "The system remains vulnerable to issues that are already public."
+    remedy: "Run sudo apt update && sudo apt upgrade, or enable unattended-upgrades for automatic security patching."
+    risk_if_ignored: "Growing exposure to known exploits — the single most important fix on this list."
+  ar:
+    cause: "حزم لها إصلاحات أمنية منشورة ما زالت مثبتة دون ترقية."
+    dangerous: "نعم — هذه تصلح ثغرات معروفة وكثيرًا ما تُستغل فعليًا."
+    impact: "يبقى النظام مكشوفًا لمشاكل صارت علنية."
+    remedy: "نفّذ sudo apt update && sudo apt upgrade، أو فعّل unattended-upgrades للترقيع الأمني التلقائي."
+    risk_if_ignored: "تعرّض متزايد لاستغلالات معروفة — أهم إصلاح في هذه القائمة."
+
+- id: packages.upgrades_pending
+  en:
+    cause: "Regular updates have not been applied for a while."
+    dangerous: "Not urgently, unless security updates are among them."
+    impact: "You miss bug fixes and the eventual upgrade becomes bigger and riskier."
+    remedy: "Run sudo apt update && sudo apt upgrade at a convenient moment."
+    risk_if_ignored: "A growing backlog that makes future upgrades slower and more error-prone."
+  ar:
+    cause: "لم تُطبَّق التحديثات الاعتيادية منذ فترة."
+    dangerous: "ليست عاجلة، ما لم تتضمن تحديثات أمنية."
+    impact: "تفوتك إصلاحات علل وتصبح الترقية القادمة أكبر وأكثر خطورة."
+    remedy: "نفّذ sudo apt update && sudo apt upgrade في وقت مناسب."
+    risk_if_ignored: "تراكم يجعل الترقيات المستقبلية أبطأ وأكثر عرضة للأخطاء."
+
+- id: logs.journal_large
+  en:
+    cause: "systemd-journald keeps logs until its size limit; the default allows several gigabytes."
+    dangerous: "No, but it silently eats disk space."
+    impact: "Gigabytes of disk used by old logs you will likely never read."
+    remedy: "Run sudo journalctl --vacuum-size=200M, and set SystemMaxUse=200M in /etc/systemd/journald.conf to cap it permanently."
+    risk_if_ignored: "The journal keeps growing to its cap, worsening disk pressure."
+  ar:
+    cause: "يحتفظ systemd-journald بالسجلات حتى حده الأقصى؛ الافتراضي يسمح بعدة غيغابايتات."
+    dangerous: "لا، لكنه يلتهم مساحة القرص بصمت."
+    impact: "غيغابايتات مستهلكة بسجلات قديمة لن تقرأها غالبًا."
+    remedy: "نفّذ sudo journalctl --vacuum-size=200M، واضبط SystemMaxUse=200M في /etc/systemd/journald.conf لتقييده دائمًا."
+    risk_if_ignored: "يستمر السجل بالنمو حتى حده مفاقمًا ضغط القرص."
+
+- id: logs.large_files
+  en:
+    cause: "A service is logging heavily — usually an error repeating in a loop — or log rotation is broken."
+    dangerous: "Indirectly: the underlying error may itself matter, and the disk fills up."
+    impact: "Disk space loss and a hint that some component is unhealthy."
+    remedy: "Inspect the file's tail to identify the noisy service, fix it, and check logrotate is active."
+    risk_if_ignored: "The file keeps growing and the real fault behind it stays unfixed."
+  ar:
+    cause: "خدمة تسجّل بكثافة — عادة خطأ يتكرر في حلقة — أو أن تدوير السجلات معطّل."
+    dangerous: "بشكل غير مباشر: الخطأ الكامن قد يكون مهمًا بذاته، والقرص يمتلئ."
+    impact: "فقدان مساحة وإشارة إلى أن مكوّنًا ما غير سليم."
+    remedy: "افحص نهاية الملف لتحديد الخدمة المزعجة وأصلحها وتأكد من عمل logrotate."
+    risk_if_ignored: "يستمر الملف بالنمو ويبقى العطل الحقيقي خلفه دون إصلاح."
+
+- id: snap.old_revisions
+  en:
+    cause: "snapd keeps previous revisions of every snap after updates (default: up to 3)."
+    dangerous: "No — purely disk usage."
+    impact: "Each old revision is a full copy; large apps waste gigabytes."
+    remedy: "Run sudo snap set system refresh.retain=2, then remove disabled revisions with snap remove --revision."
+    risk_if_ignored: "Only wasted disk space that grows with every update."
+  ar:
+    cause: "يحتفظ snapd بالمراجعات السابقة لكل snap بعد التحديثات (افتراضيًا حتى 3)."
+    dangerous: "لا — مجرد استهلاك قرص."
+    impact: "كل مراجعة قديمة نسخة كاملة؛ التطبيقات الكبيرة تهدر غيغابايتات."
+    remedy: "نفّذ sudo snap set system refresh.retain=2 ثم أزل المراجعات المعطلة بـ snap remove --revision."
+    risk_if_ignored: "فقط مساحة مهدرة تنمو مع كل تحديث."
+
+- id: battery.degraded
+  en:
+    cause: "Lithium batteries chemically age with charge cycles, heat and time; full capacity shrinks."
+    dangerous: "Not for the system, but capacity keeps declining."
+    impact: "Noticeably shorter time on battery; possible sudden shutdowns at low charge."
+    remedy: "Plan a battery replacement; meanwhile limit max charge to 80% if the firmware supports it, and avoid heat."
+    risk_if_ignored: "Runtime keeps shrinking until the laptop is desk-bound; swollen batteries are a physical hazard."
+  ar:
+    cause: "بطاريات الليثيوم تشيخ كيميائيًا مع دورات الشحن والحرارة والزمن؛ تتقلص سعتها الكاملة."
+    dangerous: "ليست خطيرة على النظام، لكن السعة تواصل التراجع."
+    impact: "زمن أقصر بوضوح على البطارية؛ واحتمال انطفاء مفاجئ عند الشحن المنخفض."
+    remedy: "خطط لاستبدال البطارية؛ وحتى ذلك الحين حدّد أقصى شحن عند 80% إن دعمه الجهاز وتجنّب الحرارة."
+    risk_if_ignored: "يستمر تقلص زمن التشغيل حتى يصبح الجهاز مقيدًا بالمقبس؛ والبطارية المنتفخة خطر مادي."
+
+- id: network.no_default_route
+  en:
+    cause: "No gateway is configured — the network is down, DHCP failed, or a VPN/network change removed the route."
+    dangerous: "Not to data, but connectivity is broken."
+    impact: "No internet access; only the local machine (and possibly LAN) is reachable."
+    remedy: "Reconnect the network, restart NetworkManager (sudo systemctl restart NetworkManager), or check the router/cable."
+    risk_if_ignored: "The machine stays offline: no browsing, updates or sync."
+  ar:
+    cause: "لا توجد بوابة مضبوطة — الشبكة مقطوعة أو فشل DHCP أو أزال تغيير شبكة/VPN المسار."
+    dangerous: "لا خطر على البيانات، لكن الاتصال معطّل."
+    impact: "لا وصول للإنترنت؛ فقط الجهاز المحلي (وربما الشبكة المحلية) متاح."
+    remedy: "أعد الاتصال بالشبكة أو أعد تشغيل NetworkManager (sudo systemctl restart NetworkManager) أو افحص الراوتر/الكابل."
+    risk_if_ignored: "يبقى الجهاز دون اتصال: لا تصفح ولا تحديثات ولا مزامنة."
+
+- id: network.no_dns
+  en:
+    cause: "/etc/resolv.conf lists no nameservers — resolver misconfiguration or a broken systemd-resolved setup."
+    dangerous: "No, but the internet is effectively unusable."
+    impact: "Websites fail by name while direct IP connections still work — the classic 'internet is broken' symptom."
+    remedy: "Restart systemd-resolved (sudo systemctl restart systemd-resolved) or set a DNS server (e.g. 1.1.1.1) in the connection settings."
+    risk_if_ignored: "Name resolution stays broken for every application."
+  ar:
+    cause: "لا يسرد ‎/etc/resolv.conf أي خوادم أسماء — خلل في إعداد المحلّل أو systemd-resolved."
+    dangerous: "لا، لكن الإنترنت عمليًا غير قابل للاستخدام."
+    impact: "تفشل المواقع بالاسم بينما الاتصال المباشر بالـ IP يعمل — العَرَض الكلاسيكي لـ«الإنترنت معطّل»."
+    remedy: "أعد تشغيل systemd-resolved (sudo systemctl restart systemd-resolved) أو اضبط خادم DNS (مثل 1.1.1.1) في إعدادات الاتصال."
+    risk_if_ignored: "يبقى حل الأسماء معطلًا لكل التطبيقات."
+
+- id: security.ssh_root_login
+  en:
+    cause: "sshd_config explicitly sets PermitRootLogin yes."
+    dangerous: "Yes on any network-reachable machine: root is the first account every bot brute-forces."
+    impact: "A single guessed or leaked root password means total compromise."
+    remedy: "Set PermitRootLogin prohibit-password (or no) in /etc/ssh/sshd_config and reload sshd; log in as a normal user and use sudo."
+    risk_if_ignored: "Continuous automated attacks against the most valuable account on the system."
+  ar:
+    cause: "يضبط sshd_config صراحةً PermitRootLogin yes."
+    dangerous: "نعم على أي جهاز يمكن الوصول إليه شبكيًا: root أول حساب تجرّبه كل بوتات التخمين."
+    impact: "تخمين أو تسريب كلمة مرور root وحدها يعني اختراقًا كاملًا."
+    remedy: "اضبط PermitRootLogin prohibit-password (أو no) في ‎/etc/ssh/sshd_config وأعد تحميل sshd؛ ادخل بمستخدم عادي واستعمل sudo."
+    risk_if_ignored: "هجمات آلية مستمرة على أثمن حساب في النظام."
+
+- id: security.firewall_inactive
+  en:
+    cause: "ufw is installed but was never enabled (Ubuntu ships it disabled by default)."
+    dangerous: "Moderately — every listening service is reachable from the local network."
+    impact: "On untrusted networks (cafés, airports), other devices can probe your open ports."
+    remedy: "Run sudo ufw enable — the default policy (deny incoming, allow outgoing) suits desktops with no extra rules."
+    risk_if_ignored: "Any vulnerable listening service is directly exposed to whoever shares your network."
+  ar:
+    cause: "ufw مثبّت لكنه لم يُفعَّل قط (يأتي معطلًا افتراضيًا في Ubuntu)."
+    dangerous: "متوسطة — كل خدمة تستمع للشبكة متاحة من الشبكة المحلية."
+    impact: "على الشبكات غير الموثوقة (مقاهٍ، مطارات) تستطيع الأجهزة الأخرى فحص منافذك المفتوحة."
+    remedy: "نفّذ sudo ufw enable — السياسة الافتراضية (منع الوارد، سماح الصادر) مناسبة لأجهزة سطح المكتب دون قواعد إضافية."
+    risk_if_ignored: "أي خدمة مستمعة فيها ثغرة تبقى مكشوفة مباشرة لمن يشاركك الشبكة."

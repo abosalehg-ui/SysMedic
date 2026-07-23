@@ -1,0 +1,10 @@
+[package]
+name = "sysmedic-collectors"
+description = "Linux system data collectors (procfs, sysfs, systemd, apt, snap) for SysMedic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sysmedic-core = { workspace = true }

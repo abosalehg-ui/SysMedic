@@ -1,0 +1,10 @@
+[package]
+name = "sysmedic-diagnostics"
+description = "Diagnostic rules for SysMedic: turn a system snapshot into explained findings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sysmedic-core = { workspace = true }
