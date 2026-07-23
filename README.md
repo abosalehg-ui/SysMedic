@@ -32,7 +32,21 @@ of a doctor's visit:
 | **Prescribe** | Safe fix suggestions today; one-click fixes with preview + undo via a polkit helper in M3 — the app never runs as root |
 | **Follow-up** | Scheduled checkups and proactive notifications (M5) |
 
-## Try it now (M1: engine + CLI)
+## The desktop app (M2)
+
+A GNOME-native GTK4/libadwaita application — automatic dark/light, Arabic and
+English, checkup on a background thread:
+
+```bash
+sudo apt install libgtk-4-dev libadwaita-1-dev   # build deps
+cargo run --release -p sysmedic-gui
+```
+
+The dashboard shows the health score and per-category bars; each finding
+expands into the five doctor questions (cause / dangerous? / impact / remedy /
+risk if ignored) with evidence and a suggested command.
+
+## Try the CLI (M1)
 
 ```bash
 cargo run --release -p sysmedic-cli -- checkup            # colored report

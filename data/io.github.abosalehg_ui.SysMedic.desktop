@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=SysMedic
+Name[ar]=SysMedic
+GenericName=System Health
+GenericName[ar]=صحة النظام
+Comment=A doctor for your Linux system: checkup, diagnose, explain, fix
+Comment[ar]=طبيب لنظام لينكس: فحص، تشخيص، شرح، إصلاح
+Exec=sysmedic-gui
+Icon=io.github.abosalehg_ui.SysMedic
+Terminal=false
+Type=Application
+Categories=System;Monitor;GTK;GNOME;
+Keywords=health;doctor;diagnostics;cleaner;monitor;system;
+StartupNotify=true

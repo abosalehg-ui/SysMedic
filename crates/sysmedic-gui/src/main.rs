@@ -1,11 +1,20 @@
-//! SysMedic GUI — placeholder binary.
+//! SysMedic desktop application (GTK4 + libadwaita).
 //!
-//! The GTK4/libadwaita application (dashboard, health score, findings with
-//! explanations, dark/light) is milestone M2 so this crate carries no GTK
-//! dependency yet. Until then, use the CLI: `sysmedic checkup`.
+//! MVVM-lite: `viewmodel` holds all presentation logic as pure, unit-tested
+//! functions; `ui` builds widgets from view-model data and owns no logic of
+//! its own. The checkup engine runs on a worker thread so the UI never
+//! blocks.
 
-fn main() {
-    eprintln!("The SysMedic GUI arrives in milestone M2 (see docs/ROADMAP.md).");
-    eprintln!("In the meantime run: sysmedic checkup");
-    std::process::exit(1);
+mod ui;
+mod viewmodel;
+
+const APP_ID: &str = "io.github.abosalehg_ui.SysMedic";
+
+fn main() -> gtk::glib::ExitCode {
+    use gtk::prelude::*;
+
+    let app = adw::Application::builder().application_id(APP_ID).build();
+    app.connect_startup(|_| ui::load_css());
+    app.connect_activate(ui::build_window);
+    app.run()
 }
