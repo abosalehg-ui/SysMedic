@@ -67,7 +67,7 @@ fn scan_inner(path: &Path, name: &str, depth_left: u32) -> Node {
             }
         }
     }
-    children.sort_by(|a, b| b.size.cmp(&a.size));
+    children.sort_by_key(|c| std::cmp::Reverse(c.size));
     Node {
         name: name.to_string(),
         size: total,
