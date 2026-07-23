@@ -29,7 +29,7 @@ of a doctor's visit:
 | **Checkup** | One command scans CPU, RAM, swap, disks, thermal, battery, services, processes, boot, logs, packages, network and security → a 0–100 health score |
 | **Diagnose** | 21+ rules: slow boot, full disks, zombie processes, overheating, failed services, broken/old packages, huge logs, snap bloat, DNS issues, SSH root login, inactive firewall... |
 | **Explain** | Every finding answers, offline and in English + العربية: what caused it? is it dangerous? what's the impact? how do I fix it? what if I ignore it? |
-| **Prescribe** | Safe fix suggestions today; one-click fixes with preview + undo via a polkit helper in M3 — the app never runs as root |
+| **Prescribe** | One-click safe fixes with a mandatory preview (what runs, which files change, is it reversible) and undo, authorized via polkit — the app never runs as root |
 | **Follow-up** | Scheduled checkups and proactive notifications (M5) |
 
 ## The desktop app (M2)
@@ -60,10 +60,30 @@ Requires Rust stable; runs on any modern Linux (Ubuntu/Debian gets the fullest
 coverage). Anything unavailable — no battery, no systemd in a container — is
 skipped gracefully and reported as a skipped check.
 
+## Safe fixes (M3)
+
+SysMedic can *prescribe* and apply fixes — always with informed consent, never
+as root:
+
+```bash
+sysmedic fix                                # list fixes that apply right now
+sysmedic fix fix.apt_clean --dry-run        # preview: commands, files, undo
+sysmedic fix fix.apt_clean --yes            # apply (root: direct; else pkexec)
+sysmedic undo --yes                         # revert the last reversible fix
+```
+
+Before anything changes you see exactly what will run, which paths it touches,
+its risk, and whether it can be undone. The GUI and CLI never run as root: the
+privileged step goes through `sysmedic-fix-helper`, launched via **pkexec** and
+authorized by **polkit**. The helper accepts a fix *id* only and rebuilds the
+plan itself, so no command can be injected. Every applied fix is recorded in a
+transaction journal (`/var/lib/sysmedic/journal.json`) that powers `undo`.
+Current fixes: clear APT cache, trim the journal, remove old kernels, reduce
+retained snap revisions, remove unused Flatpak runtimes, enable the firewall.
+
 ## Project
 
-- **Stack:** Rust workspace; GTK4/libadwaita GUI arriving in M2 (GNOME-native,
-  dark/light).
+- **Stack:** Rust workspace; GNOME-native GTK4/libadwaita GUI (dark/light).
 - **Architecture:** Clean Architecture — pure domain core, pluggable
   collectors/diagnostics/fixes, presentation on top.
   See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

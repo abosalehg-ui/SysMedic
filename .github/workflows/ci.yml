@@ -26,7 +26,9 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests
         run: cargo test --workspace
-      - name: Build CLI (release)
-        run: cargo build --release -p sysmedic-cli
+      - name: Build CLI + fix helper (release)
+        run: cargo build --release -p sysmedic-cli -p sysmedic-daemon
       - name: Smoke-run checkup
         run: ./target/release/sysmedic checkup --format json | head -c 2000
+      - name: Smoke-run fix listing
+        run: ./target/release/sysmedic fix

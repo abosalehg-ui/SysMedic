@@ -10,6 +10,7 @@ pub mod battery;
 pub mod boot;
 pub mod cpu;
 pub mod disk;
+pub mod flatpak;
 pub mod logs;
 pub mod memory;
 pub mod network;
@@ -39,5 +40,6 @@ pub fn default_collectors() -> Vec<Box<dyn Collector>> {
         Box::new(security::SecurityCollector),
         Box::new(battery::BatteryCollector),
         Box::new(snap::SnapCollector),
+        Box::new(flatpak::FlatpakCollector),
     ]
 }

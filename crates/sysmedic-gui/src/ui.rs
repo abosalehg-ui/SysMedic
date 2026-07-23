@@ -2,14 +2,26 @@
 //! `viewmodel` module; the checkup runs via `gio::spawn_blocking` so the
 //! main loop stays responsive.
 
+use std::cell::RefCell;
+use std::process::Command;
 use std::rc::Rc;
 
 use adw::prelude::*;
 use gtk::glib;
+use sysmedic_core::fix::FixPlan;
 use sysmedic_core::{Engine, HealthReport};
 use sysmedic_knowledge::Lang;
 
 use crate::viewmodel::{self, Strings};
+
+const DEFAULT_HELPER: &str = "/usr/libexec/sysmedic-fix-helper";
+
+/// A "re-run the checkup" callback, shared so a finished fix can trigger it.
+type RefreshFn = Rc<dyn Fn()>;
+
+fn helper_path() -> String {
+    std::env::var("SYSMEDIC_HELPER").unwrap_or_else(|_| DEFAULT_HELPER.to_string())
+}
 
 pub fn load_css() {
     let provider = gtk::CssProvider::new();
@@ -70,10 +82,15 @@ pub fn build_window(app: &adw::Application) {
         .content(&toolbar_view)
         .build();
 
-    let run_checkup: Rc<dyn Fn()> = Rc::new({
+    // `run_checkup` needs to reference itself so a finished fix can trigger a
+    // re-scan. A shared cell breaks the chicken-and-egg of the self-reference.
+    let self_ref: Rc<RefCell<Option<RefreshFn>>> = Rc::new(RefCell::new(None));
+    let run_checkup: RefreshFn = Rc::new({
         let clamp = clamp.clone();
         let spinner = spinner.clone();
         let refresh = refresh.clone();
+        let window = window.clone();
+        let self_ref = self_ref.clone();
         move || {
             spinner.start();
             refresh.set_sensitive(false);
@@ -86,12 +103,17 @@ pub fn build_window(app: &adw::Application) {
             let clamp = clamp.clone();
             let spinner = spinner.clone();
             let refresh = refresh.clone();
+            let window = window.clone();
+            let on_changed = self_ref.borrow().clone();
             glib::spawn_future_local(async move {
                 let result = gtk::gio::spawn_blocking(run_engine).await;
                 spinner.stop();
                 refresh.set_sensitive(true);
                 match result {
-                    Ok(report) => clamp.set_child(Some(&report_view(&report, lang))),
+                    Ok(report) => {
+                        let refresh_cb = on_changed.unwrap_or_else(|| Rc::new(|| {}));
+                        clamp.set_child(Some(&report_view(&report, lang, &window, refresh_cb)));
+                    }
                     Err(_) => clamp.set_child(Some(
                         &adw::StatusPage::builder()
                             .title(strings.checkup_failed)
@@ -102,6 +124,7 @@ pub fn build_window(app: &adw::Application) {
             });
         }
     });
+    *self_ref.borrow_mut() = Some(run_checkup.clone());
 
     refresh.connect_clicked({
         let run_checkup = run_checkup.clone();
@@ -112,7 +135,61 @@ pub fn build_window(app: &adw::Application) {
     window.present();
 }
 
-fn report_view(report: &HealthReport, lang: Lang) -> gtk::Box {
+/// Ask polkit (via pkexec) to run the helper for `fix_id`, then re-scan.
+fn confirm_and_apply(
+    window: &adw::ApplicationWindow,
+    lang: Lang,
+    plan: &FixPlan,
+    on_changed: RefreshFn,
+) {
+    let strings = Strings::for_lang(lang);
+    let reversibility = if plan.reversible {
+        strings.reversible_yes
+    } else {
+        strings.reversible_no
+    };
+    let dialog = adw::AlertDialog::new(Some(strings.confirm_fix_title), None);
+    dialog.set_body(&format!("{}\n\n{}", plan.preview(), reversibility));
+    dialog.add_response("cancel", strings.cancel);
+    dialog.add_response("apply", strings.apply);
+    dialog.set_response_appearance("apply", adw::ResponseAppearance::Suggested);
+    dialog.set_default_response(Some("cancel"));
+    dialog.set_close_response("cancel");
+
+    let fix_id = plan.id.clone();
+    let window = window.clone();
+    dialog.connect_response(None, move |_, response| {
+        if response != "apply" {
+            return;
+        }
+        let fix_id = fix_id.clone();
+        let on_changed = on_changed.clone();
+        glib::spawn_future_local(async move {
+            let helper = helper_path();
+            let id = fix_id.clone();
+            // pkexec prompts polkit; the helper does the privileged work.
+            let _succeeded = gtk::gio::spawn_blocking(move || {
+                Command::new("pkexec")
+                    .arg(helper)
+                    .arg("apply")
+                    .arg(&id)
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false)
+            })
+            .await;
+            on_changed(); // re-scan so the UI reflects the new state
+        });
+    });
+    dialog.present(Some(&window));
+}
+
+fn report_view(
+    report: &HealthReport,
+    lang: Lang,
+    window: &adw::ApplicationWindow,
+    on_changed: RefreshFn,
+) -> gtk::Box {
     let strings = Strings::for_lang(lang);
     let root = gtk::Box::new(gtk::Orientation::Vertical, 18);
 
@@ -178,6 +255,22 @@ fn report_view(report: &HealthReport, lang: Lang) -> gtk::Box {
             hint_row.add_css_class("monospace");
             row.add_row(&hint_row);
         }
+
+        // If SysMedic has a one-click fix for this finding, offer it.
+        if let Some(plan) = sysmedic_fixes::fix_for_finding(&finding.id)
+            .and_then(|fix_id| sysmedic_fixes::plan(fix_id, &report.snapshot))
+        {
+            let button = gtk::Button::with_label(strings.apply_fix);
+            button.add_css_class("suggested-action");
+            button.set_valign(gtk::Align::Center);
+            let window = window.clone();
+            let on_changed = on_changed.clone();
+            button.connect_clicked(move |_| {
+                confirm_and_apply(&window, lang, &plan, on_changed.clone());
+            });
+            row.add_suffix(&button);
+        }
+
         findings.append(&row);
     }
     root.append(&findings);

@@ -1,3 +1,4 @@
+mod fix;
 mod text;
 
 use std::fs;
@@ -41,6 +42,23 @@ enum Command {
         id: String,
         #[arg(long, value_enum)]
         lang: Option<CliLang>,
+    },
+    /// Preview or apply a safe fix (omit id to list applicable fixes)
+    Fix {
+        /// Fix id, e.g. fix.apt_clean
+        id: Option<String>,
+        /// Show the plan without changing anything
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply the fix (otherwise only the preview is shown)
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Undo the most recent reversible fix
+    Undo {
+        /// Perform the undo (otherwise only shows what would be undone)
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -123,6 +141,11 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Command::Fix { id, dry_run, yes } => match id {
+            Some(id) => fix::apply(&id, dry_run, yes)?,
+            None => fix::list()?,
+        },
+        Command::Undo { yes } => fix::undo(yes)?,
     }
     Ok(())
 }

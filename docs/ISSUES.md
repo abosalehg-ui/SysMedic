@@ -43,24 +43,29 @@ initial M0/M1 increment; the rest are open work.
 24. ✅ CI: GTK dev dependencies installed in the workflow
 
 ## M3 — Auto Fix
-25. `sysmedicd` D-Bus system service + polkit policy
-26. FixPlan preview dialog + confirmation flow
-27. Transaction journal + `sysmedic undo`
-28. Fixes: apt clean, journal vacuum, autoremove kernels, snap retain,
-    flatpak remove unused, disable service, enable ufw
-29. Integration tests for fixes in a container
+25. ✅ Privileged fix helper (`sysmedic-fix-helper`) authorized via
+    polkit/pkexec + polkit policy; GUI/CLI never run as root
+    (resident D-Bus `sysmedicd` moved to M5 with the scheduler)
+26. ✅ FixPlan preview + confirmation flow (CLI `--dry-run`, GUI dialog)
+27. ✅ Transaction journal + `sysmedic undo`
+28. ✅ Fixes: apt clean, journal vacuum, autoremove kernels, snap retain,
+    flatpak remove unused, enable ufw (parameterized `disable service`
+    deferred — it needs a target-picker UI)
+29. ✅ Fix-engine + journal unit tests; live apply/undo verified as root
+30. ✅ Flatpak collector + diagnostic + bilingual knowledge entry
 
 ## M4 — Advanced tools
-30. Disk analyzer backend (parallel du) + treemap widget
-31. Network panel: per-process traffic, open ports, latency, DNS info
-32. Security audit page (aggregate + explain)
+31. Disk analyzer backend (parallel du) + treemap widget
+32. Network panel: per-process traffic, open ports, latency, DNS info
+33. Security audit page (aggregate + explain)
 
 ## M5 — Follow-up
-33. Scheduler via systemd user timers (daily/weekly/monthly)
-34. Desktop notifications (disk, thermal, RAM, security updates)
-35. Health history storage + trend chart; PDF export
+34. `sysmedicd` resident D-Bus service hosting the scheduler
+35. Scheduler via systemd user timers (daily/weekly/monthly)
+36. Desktop notifications (disk, thermal, RAM, security updates)
+37. Health history storage + trend chart; PDF export
 
 ## M6 — 1.0
-36. Flatpak manifest + Flathub submission; deb/AppImage/Snap packaging
-37. Optional LLM Explainer provider (opt-in API key)
-38. Website + screenshots + release announcement
+38. Flatpak manifest + Flathub submission; deb/AppImage/Snap packaging
+39. Optional LLM Explainer provider (opt-in API key)
+40. Website + screenshots + release announcement

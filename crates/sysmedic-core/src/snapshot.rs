@@ -21,6 +21,7 @@ pub struct Snapshot {
     pub security: Option<SecurityInfo>,
     pub battery: Option<BatteryInfo>,
     pub snap: Option<SnapInfo>,
+    pub flatpak: Option<FlatpakInfo>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub collection_errors: Vec<String>,
 }
@@ -176,4 +177,10 @@ pub struct BatteryInfo {
 pub struct SnapInfo {
     pub disabled_revisions: u32,
     pub snaps_dir_bytes: Option<u64>,
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct FlatpakInfo {
+    /// Runtimes/extensions no application depends on any more.
+    pub unused_refs: Vec<String>,
 }
