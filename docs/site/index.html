@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SysMedic — a doctor for your Linux system</title>
+<meta name="description" content="SysMedic examines, diagnoses, explains and safely fixes your Linux system, with a 0–100 health score and a GNOME-native app.">
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1b1b21; --muted: #5c5c68; --card: #f6f6f8;
+    --border: #e2e2e8; --accent: #3584e4; --accent-fg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1b21; --fg: #f2f2f5; --muted: #b0b0bd; --card: #26262e;
+      --border: #35353f; --accent: #62a0ea; --accent-fg: #10131a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+  header { text-align: center; padding: 72px 20px 40px; }
+  header h1 { font-size: 3rem; margin: 0 0 8px; }
+  header p.tag { font-size: 1.3rem; color: var(--muted); margin: 0 auto 28px; max-width: 640px; }
+  .btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 12px 22px; border-radius: 10px;
+    text-decoration: none; font-weight: 600; border: 1px solid var(--border);
+  }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin: 8px 0 40px; }
+  .step { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .step b { display: block; font-size: 1.05rem; margin-bottom: 4px; }
+  .step span { color: var(--muted); font-size: 0.92rem; }
+  h2 { font-size: 1.7rem; margin: 48px 0 16px; }
+  .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .shots figure { margin: 0; }
+  .shots img { width: 100%; border-radius: 12px; border: 1px solid var(--border); display: block; }
+  .shots figcaption { color: var(--muted); font-size: 0.9rem; margin-top: 6px; text-align: center; }
+  pre {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px; overflow-x: auto; font-size: 0.9rem;
+  }
+  ul.feat { columns: 2; column-gap: 32px; padding-left: 20px; }
+  @media (max-width: 560px) { ul.feat { columns: 1; } header h1 { font-size: 2.2rem; } }
+  footer { text-align: center; color: var(--muted); padding: 48px 20px; border-top: 1px solid var(--border); margin-top: 56px; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>SysMedic 🩺</h1>
+    <p class="tag">A doctor for your Linux system — it examines, diagnoses, explains
+      in plain language, prescribes safe fixes, and follows up.</p>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/abosalehg-ui/SysMedic/releases">Download</a>
+      <a class="btn" href="https://github.com/abosalehg-ui/SysMedic">Source on GitHub</a>
+      <a class="btn" href="https://github.com/abosalehg-ui/SysMedic/blob/main/INSTALL.md">Install guide</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="steps">
+    <div class="step"><b>Checkup</b><span>A 0–100 health score across your whole system.</span></div>
+    <div class="step"><b>Diagnose</b><span>21+ rules find the real problems.</span></div>
+    <div class="step"><b>Explain</b><span>Plain English &amp; العربية, offline.</span></div>
+    <div class="step"><b>Prescribe</b><span>Safe, reversible fixes via polkit.</span></div>
+    <div class="step"><b>Follow-up</b><span>Scheduled checkups &amp; alerts.</span></div>
+  </div>
+
+  <h2>See it</h2>
+  <div class="shots">
+    <figure>
+      <img src="screenshots/dashboard.png" alt="Health-score dashboard">
+      <figcaption>Health score &amp; per-category bars</figcaption>
+    </figure>
+    <figure>
+      <img src="screenshots/findings-fix.png" alt="Findings list with an Apply-fix button">
+      <figcaption>Findings with one-click fixes</figcaption>
+    </figure>
+    <figure>
+      <img src="screenshots/fix-confirm.png" alt="Fix confirmation dialog">
+      <figcaption>Every fix is previewed before it runs</figcaption>
+    </figure>
+    <figure>
+      <img src="screenshots/disk-treemap.png" alt="Disk usage treemap">
+      <figcaption>Disk-usage treemap</figcaption>
+    </figure>
+  </div>
+
+  <h2>Why SysMedic?</h2>
+  <p>Every existing tool is a monitor (htop, btop, Mission Center), a cleaner
+     (BleachBit, Stacer) or an expert CLI (systemd-analyze, smartctl). <b>Nobody
+     diagnoses, explains and fixes safely.</b> SysMedic does all five steps of a
+     doctor's visit — and never runs as root: privileged fixes go through a
+     polkit-authorized helper that accepts a fix id only and rebuilds the plan,
+     so nothing can be injected.</p>
+
+  <ul class="feat">
+    <li>Weighted 0–100 health score</li>
+    <li>CPU, RAM, swap, disks, thermal, battery</li>
+    <li>SMART disk health &amp; SSD wear</li>
+    <li>Services, processes, boot analysis</li>
+    <li>Security audit: firewall, SSH, exposed ports</li>
+    <li>Bilingual offline explanations (en/ar)</li>
+    <li>Safe fixes with preview &amp; undo</li>
+    <li>Disk-usage treemap analyzer</li>
+    <li>Scheduled checkups &amp; desktop alerts</li>
+    <li>HTML / Markdown / JSON / PDF reports</li>
+    <li>Optional AI deep-explain (bring your own key)</li>
+    <li>GTK4/libadwaita — automatic dark/light</li>
+  </ul>
+
+  <h2>Try the CLI</h2>
+  <pre>sudo apt install ./sysmedic_*.deb
+
+sysmedic checkup                       # colored 0–100 report
+sysmedic explain storage.disk_nearly_full --lang ar
+sysmedic explain storage.disk_nearly_full --deep   # optional: AI, opt-in
+sysmedic fix fix.apt_clean --dry-run   # preview a safe fix
+sysmedic disk ~                        # largest folders
+sysmedic schedule daily                # follow-up checkups</pre>
+</main>
+
+<footer>
+  <div class="wrap">
+    SysMedic · GPL-3.0-or-later · Created and maintained by
+    <a href="https://github.com/abosalehg-ui">abosalehg-ui</a> ·
+    <a href="https://github.com/abosalehg-ui/SysMedic/issues">Report an issue</a>
+  </div>
+</footer>
+</body>
+</html>

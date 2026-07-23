@@ -8,8 +8,10 @@ repository.workspace = true
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 once_cell = { workspace = true }
+ureq = { workspace = true }
 
 [dev-dependencies]
 sysmedic-diagnostics = { workspace = true }

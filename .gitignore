@@ -1,3 +1,12 @@
 /target
 **/*.rs.bk
 *.profraw
+
+# Build artifacts produced by the packaging scripts
+/*.deb
+/*.AppImage
+/*.snap
+/packaging/flatpak/.flatpak-builder/
+/packaging/flatpak/build/
+/packaging/flatpak/repo/
+/packaging/appimage/AppDir/

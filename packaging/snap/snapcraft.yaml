@@ -1,0 +1,48 @@
+name: sysmedic
+base: core24
+adopt-info: sysmedic
+summary: A doctor for your Linux system
+description: |
+  SysMedic examines your system, gives it a 0-100 health score, diagnoses
+  problems, explains each one in plain language (English and Arabic), and
+  prescribes safe, reversible fixes. It also analyzes disk usage, audits
+  security, schedules checkups and exports reports. GTK4/libadwaita GUI plus
+  a full-featured CLI.
+
+grade: stable
+confinement: classic  # a system doctor needs broad read access to diagnose the host
+
+platforms:
+  amd64:
+  arm64:
+
+apps:
+  sysmedic:
+    command: bin/sysmedic
+  sysmedic-gui:
+    command: bin/sysmedic-gui
+    extensions: [gnome]
+    desktop: share/applications/io.github.abosalehg_ui.SysMedic.desktop
+
+parts:
+  sysmedic:
+    plugin: rust
+    source: .
+    rust-path: [crates/sysmedic-cli]
+    build-packages:
+      - libgtk-4-dev
+      - libadwaita-1-dev
+    override-pull: |
+      craftctl default
+      craftctl set version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+    override-build: |
+      cargo build --release --locked \
+        -p sysmedic-cli -p sysmedic-daemon -p sysmedic-gui
+      install -Dm755 target/release/sysmedic "$CRAFT_PART_INSTALL/bin/sysmedic"
+      install -Dm755 target/release/sysmedic-gui "$CRAFT_PART_INSTALL/bin/sysmedic-gui"
+      install -Dm755 target/release/sysmedic-fix-helper \
+        "$CRAFT_PART_INSTALL/libexec/sysmedic-fix-helper"
+      install -Dm644 data/io.github.abosalehg_ui.SysMedic.desktop \
+        "$CRAFT_PART_INSTALL/share/applications/io.github.abosalehg_ui.SysMedic.desktop"
+      install -Dm644 data/io.github.abosalehg_ui.SysMedic.metainfo.xml \
+        "$CRAFT_PART_INSTALL/share/metainfo/io.github.abosalehg_ui.SysMedic.metainfo.xml"

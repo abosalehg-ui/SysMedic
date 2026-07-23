@@ -48,6 +48,13 @@ enum Command {
         id: String,
         #[arg(long, value_enum)]
         lang: Option<CliLang>,
+        /// Extra evidence to pass to a deep explanation (with --deep)
+        #[arg(long)]
+        context: Option<String>,
+        /// Ask Claude for a deeper, context-aware explanation (needs
+        /// ANTHROPIC_API_KEY; falls back to the offline answer)
+        #[arg(long)]
+        deep: bool,
     },
     /// Preview or apply a safe fix (omit id to list applicable fixes)
     Fix {
@@ -187,7 +194,12 @@ fn main() -> Result<()> {
                 println!("{name}");
             }
         }
-        Command::Explain { id, lang } => {
+        Command::Explain {
+            id,
+            lang,
+            context,
+            deep,
+        } => {
             let lang = resolve_lang(lang);
             match sysmedic_knowledge::explain(&id, lang) {
                 Some(exp) => {
@@ -201,6 +213,26 @@ fn main() -> Result<()> {
                     anyhow::bail!(
                         "unknown finding id '{id}' — run `sysmedic checkup` to see current findings"
                     );
+                }
+            }
+            if deep {
+                use sysmedic_knowledge::Explainer;
+                match sysmedic_knowledge::LlmExplainer::from_env() {
+                    Some(provider) => {
+                        let ctx = context.unwrap_or_default();
+                        match provider.explain(&id, &ctx, lang) {
+                            Some(text) => {
+                                println!("\nDeep explanation ({}):\n{text}", provider.model())
+                            }
+                            None => eprintln!(
+                                "Deep explanation unavailable; showed the offline answer above."
+                            ),
+                        }
+                    }
+                    None => eprintln!(
+                        "\n--deep needs a Claude API key. Set ANTHROPIC_API_KEY to enable it \
+                         (optionally SYSMEDIC_LLM_MODEL to pick a model)."
+                    ),
                 }
             }
         }
