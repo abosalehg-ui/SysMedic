@@ -43,15 +43,17 @@ maintainability over ease of writing.
 
 | Crate | Layer | Responsibility |
 |---|---|---|
-| `sysmedic-core` | Domain | Data model, traits, engine, weighted health scoring |
-| `sysmedic-collectors` | Infra | Read the system: CPU, memory, disks, thermal, processes, services, packages, boot, logs, network, security, battery, snap, flatpak |
+| `sysmedic-core` | Domain | Data model, traits, engine, weighted health scoring, alert thresholds |
+| `sysmedic-collectors` | Infra | Read the system: CPU, memory, disks, thermal, processes, services, packages, boot, logs, network, security, battery, snap, flatpak, SMART, ports |
 | `sysmedic-diagnostics` | Infra | Pure rules `fn(&Snapshot) -> Vec<Finding>`; stable finding ids |
 | `sysmedic-knowledge` | Infra | Embedded bilingual (en/ar) explanations per finding id; `Explainer` trait for optional LLM backends (M6) |
 | `sysmedic-fixes` | Infra | Fix engine: plan → preview → apply → undo, with a `CommandRunner` seam and a transaction journal |
-| `sysmedic-report` | Infra | JSON / Markdown / HTML rendering (PDF via HTML print, M5) |
-| `sysmedic-daemon` | Infra | `sysmedic-fix-helper`: the pkexec/polkit-authorized privileged fix executor (resident `sysmedicd` scheduler service arrives in M5) |
-| `sysmedic-cli` | Presentation | `sysmedic checkup / checks / explain / fix / undo` |
-| `sysmedic-gui` | Presentation | GTK4/libadwaita app |
+| `sysmedic-diskscan` | Infra | Directory size tree + pure squarified-treemap layout |
+| `sysmedic-history` | Infra | Append-only health-score history (JSONL) + trend/sparkline |
+| `sysmedic-report` | Infra | JSON / Markdown / HTML / PDF (headless-browser print) rendering |
+| `sysmedic-daemon` | Infra | `sysmedic-fix-helper`: the pkexec/polkit-authorized privileged fix executor (scheduling uses systemd user timers, not a resident daemon) |
+| `sysmedic-cli` | Presentation | `checkup / checks / explain / fix / undo / disk / network / monitor / history / schedule` |
+| `sysmedic-gui` | Presentation | GTK4/libadwaita app (Overview + Disk Usage) |
 
 ## Key design decisions
 

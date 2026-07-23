@@ -5,6 +5,7 @@
 //! ([`Collector`], [`Diagnostic`], [`fix::FixPlan`]) and the [`Engine`] that
 //! orchestrates a checkup. Infrastructure crates plug into these traits.
 
+pub mod alert;
 pub mod engine;
 pub mod finding;
 pub mod fix;

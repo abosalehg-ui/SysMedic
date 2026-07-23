@@ -110,6 +110,25 @@ transaction journal (`/var/lib/sysmedic/journal.json`) that powers `undo`.
 Current fixes: clear APT cache, trim the journal, remove old kernels, reduce
 retained snap revisions, remove unused Flatpak runtimes, enable the firewall.
 
+## Follow-up: schedule, alerts, history, PDF (M5)
+
+SysMedic keeps watching after the first checkup:
+
+```bash
+sysmedic schedule daily          # run a checkup automatically (systemd user timer)
+sysmedic monitor                 # checkup + record history + notify on alerts
+sysmedic history                 # health-score trend (sparkline + last runs)
+sysmedic checkup --format pdf --output report.pdf   # shareable PDF report
+sysmedic schedule off            # stop scheduled checkups
+```
+
+Scheduling uses a **systemd user timer** (Linux-native — survives reboots, no
+idle cost) rather than an always-on daemon. Each scheduled run fires desktop
+notifications for disk-full, overheating, low-RAM and pending-security-update
+alerts, and appends to a health-score history the GUI shows as a trend strip.
+PDF export prints the HTML report through a headless browser, falling back to
+HTML when none is installed.
+
 ## Project
 
 - **Stack:** Rust workspace; GNOME-native GTK4/libadwaita GUI (dark/light).

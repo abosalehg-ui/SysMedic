@@ -41,10 +41,14 @@ pub fn load_css() {
 }
 
 fn run_engine() -> HealthReport {
-    Engine::new()
+    let report = Engine::new()
         .with_collectors(sysmedic_collectors::default_collectors())
         .with_diagnostics(sysmedic_diagnostics::default_diagnostics())
-        .run()
+        .run();
+    // Record this checkup so the trend strip has data (best-effort).
+    let entry = sysmedic_history::HistoryEntry::from_report(&report);
+    let _ = sysmedic_history::append(sysmedic_history::default_path(), &entry);
+    report
 }
 
 pub fn build_window(app: &adw::Application) {
@@ -262,6 +266,19 @@ fn report_view(
     hero_title.add_css_class("dim-label");
     for w in [&hero_title, &score, &grade, &generated] {
         root.append(w);
+    }
+
+    // History trend strip (populated by past checkups).
+    let entries = sysmedic_history::load(sysmedic_history::default_path());
+    if entries.len() >= 2 {
+        let spark = sysmedic_history::sparkline(&entries, 40);
+        let trend = sysmedic_history::trend_delta(&entries)
+            .map(|d| format!("  ({d:+} since first)"))
+            .unwrap_or_default();
+        let history = gtk::Label::new(Some(&format!("{spark}{trend}")));
+        history.add_css_class("dim-label");
+        history.set_tooltip_text(Some(strings.history_tooltip));
+        root.append(&history);
     }
 
     // Category scores.

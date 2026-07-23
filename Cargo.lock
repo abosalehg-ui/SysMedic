@@ -844,6 +844,7 @@ dependencies = [
  "sysmedic-diagnostics",
  "sysmedic-diskscan",
  "sysmedic-fixes",
+ "sysmedic-history",
  "sysmedic-knowledge",
  "sysmedic-report",
 ]
@@ -911,7 +912,19 @@ dependencies = [
  "sysmedic-diagnostics",
  "sysmedic-diskscan",
  "sysmedic-fixes",
+ "sysmedic-history",
  "sysmedic-knowledge",
+]
+
+[[package]]
+name = "sysmedic-history"
+version = "0.1.0"
+dependencies = [
+ "humantime",
+ "serde",
+ "serde_json",
+ "sysmedic-core",
+ "tempfile",
 ]
 
 [[package]]

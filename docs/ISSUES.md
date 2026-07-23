@@ -64,10 +64,13 @@ initial M0/M1 increment; the rest are open work.
 36. SMART self-test scheduling & history — deferred to M5
 
 ## M5 — Follow-up
-37. `sysmedicd` resident D-Bus service hosting the scheduler
-38. Scheduler via systemd user timers (daily/weekly/monthly)
-39. Desktop notifications (disk, thermal, RAM, security updates)
-40. Health history storage + trend chart; PDF export
+37. ✅ Scheduler via systemd user timers (`sysmedic schedule`); resident D-Bus
+    daemon judged unnecessary (timers are the scheduler)
+38. ✅ Desktop notifications via `sysmedic monitor` + alert thresholds
+    (disk, thermal, RAM, security updates)
+39. ✅ Health history storage (`sysmedic-history`) + `sysmedic history` +
+    GUI trend strip
+40. ✅ PDF export (`checkup --format pdf` via headless browser, HTML fallback)
 
 ## M6 — 1.0
 41. Flatpak manifest + Flathub submission; deb/AppImage/Snap packaging
