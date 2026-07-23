@@ -5,6 +5,7 @@
 //! its own. The checkup engine runs on a worker thread so the UI never
 //! blocks.
 
+mod disk;
 mod ui;
 mod viewmodel;
 

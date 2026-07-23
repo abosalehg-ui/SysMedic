@@ -55,17 +55,21 @@ initial M0/M1 increment; the rest are open work.
 30. ✅ Flatpak collector + diagnostic + bilingual knowledge entry
 
 ## M4 — Advanced tools
-31. Disk analyzer backend (parallel du) + treemap widget
-32. Network panel: per-process traffic, open ports, latency, DNS info
-33. Security audit page (aggregate + explain)
+31. ✅ Disk analyzer backend (size tree) + squarified treemap layout +
+    GUI treemap page + CLI `disk`
+32. ✅ SMART collector + disk-health diagnostics + knowledge
+33. ✅ Listening-port collector + exposed-ports & SSH password-auth audit
+34. ✅ Network view: `sysmedic network` + GUI ViewStack
+35. Per-process network bandwidth (sampling, needs privileges) — deferred
+36. SMART self-test scheduling & history — deferred to M5
 
 ## M5 — Follow-up
-34. `sysmedicd` resident D-Bus service hosting the scheduler
-35. Scheduler via systemd user timers (daily/weekly/monthly)
-36. Desktop notifications (disk, thermal, RAM, security updates)
-37. Health history storage + trend chart; PDF export
+37. `sysmedicd` resident D-Bus service hosting the scheduler
+38. Scheduler via systemd user timers (daily/weekly/monthly)
+39. Desktop notifications (disk, thermal, RAM, security updates)
+40. Health history storage + trend chart; PDF export
 
 ## M6 — 1.0
-38. Flatpak manifest + Flathub submission; deb/AppImage/Snap packaging
-39. Optional LLM Explainer provider (opt-in API key)
-40. Website + screenshots + release announcement
+41. Flatpak manifest + Flathub submission; deb/AppImage/Snap packaging
+42. Optional LLM Explainer provider (opt-in API key)
+43. Website + screenshots + release announcement

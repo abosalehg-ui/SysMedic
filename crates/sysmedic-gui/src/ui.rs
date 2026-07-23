@@ -83,9 +83,24 @@ pub fn build_window(app: &adw::Application) {
         .child(&clamp)
         .build();
 
+    // Two pages: the health Overview and the Disk Usage treemap.
+    let stack = adw::ViewStack::new();
+    stack
+        .add_titled(&scrolled, Some("overview"), strings.overview)
+        .set_icon_name(Some("emblem-ok-symbolic"));
+    stack
+        .add_titled(&crate::disk::disk_page(), Some("disk"), strings.disk_usage)
+        .set_icon_name(Some("drive-harddisk-symbolic"));
+
+    let switcher = adw::ViewSwitcher::builder()
+        .stack(&stack)
+        .policy(adw::ViewSwitcherPolicy::Wide)
+        .build();
+    header.set_title_widget(Some(&switcher));
+
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(&header);
-    toolbar_view.set_content(Some(&scrolled));
+    toolbar_view.set_content(Some(&stack));
 
     let window = adw::ApplicationWindow::builder()
         .application(app)

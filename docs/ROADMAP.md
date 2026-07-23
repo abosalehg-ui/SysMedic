@@ -43,12 +43,20 @@ issues), CI (fmt + clippy + tests + build), GPL-3.0.
   scheduler actually needs a long-running process; on-demand fixes need only
   the pkexec helper.)
 
-## M4 — Advanced tools
-- Disk analyzer with treemap/sunburst visualization
-- Network panel: per-process usage, open ports, DNS, latency
-- Security audit: firewall, SSH hardening, open ports, security updates,
-  risky services, weak configs
-- SMART collector (smartctl JSON) + disk-health diagnostics
+## M4 — Advanced tools ✅
+- Disk analyzer: `sysmedic-diskscan` crate (directory size tree + pure,
+  unit-tested squarified-treemap layout); GUI Disk Usage page renders the
+  treemap with cairo on a worker thread; CLI `sysmedic disk [path]`
+- SMART collector (`smartctl --json`) + disk-health diagnostics (failing
+  self-assessment, reallocated sectors, SSD wear) + bilingual knowledge
+- Security audit: listening-port collector (`/proc/net/tcp{,6}`, no external
+  tool) flagging services exposed beyond localhost; SSH `PasswordAuthentication`
+  hardening check; these join the existing firewall/root-login/security-update
+  findings in every checkup
+- Network view: `sysmedic network` (default route, DNS, listening ports,
+  latency); GUI restructured into an AdwViewStack (Overview + Disk Usage)
+- (Per-process live bandwidth deferred: it needs sampling and elevated
+  privileges; open ports with scope cover the exposed-service question.)
 
 ## M5 — Follow-up
 - `sysmedicd` resident service (D-Bus) hosting the scheduler

@@ -15,9 +15,11 @@ pub mod logs;
 pub mod memory;
 pub mod network;
 pub mod packages;
+pub mod ports;
 pub mod process;
 pub mod security;
 pub mod services;
+pub mod smart;
 pub mod snap;
 pub mod thermal;
 mod util;
@@ -41,5 +43,7 @@ pub fn default_collectors() -> Vec<Box<dyn Collector>> {
         Box::new(battery::BatteryCollector),
         Box::new(snap::SnapCollector),
         Box::new(flatpak::FlatpakCollector),
+        Box::new(smart::SmartCollector),
+        Box::new(ports::PortsCollector),
     ]
 }

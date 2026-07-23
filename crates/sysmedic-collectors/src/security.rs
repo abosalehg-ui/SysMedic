@@ -11,12 +11,30 @@ impl Collector for SecurityCollector {
     }
 
     fn collect(&self, snapshot: &mut Snapshot) {
+        let sshd = util::read_file("/etc/ssh/sshd_config");
         snapshot.security = Some(SecurityInfo {
             firewall_active: firewall_active(),
-            ssh_permit_root_login: util::read_file("/etc/ssh/sshd_config")
-                .and_then(|c| parse_permit_root_login(&c)),
+            ssh_permit_root_login: sshd.as_deref().and_then(parse_permit_root_login),
+            ssh_password_auth: sshd.as_deref().and_then(parse_password_auth),
         });
     }
+}
+
+/// Effective `PasswordAuthentication` (last directive wins). `None` when the
+/// directive is absent — sshd's built-in default is `yes`, but we only flag
+/// what is explicitly configured to avoid false positives.
+pub fn parse_password_auth(config: &str) -> Option<bool> {
+    let mut value = None;
+    for line in config.lines() {
+        let line = line.trim();
+        if line.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("PasswordAuthentication") {
+            value = Some(rest.trim().eq_ignore_ascii_case("yes"));
+        }
+    }
+    value
 }
 
 /// Best-effort firewall detection: `ufw status` when runnable (needs
@@ -73,5 +91,18 @@ mod tests {
     #[test]
     fn commented_directive_is_ignored() {
         assert_eq!(parse_permit_root_login("#PermitRootLogin yes\n"), None);
+    }
+
+    #[test]
+    fn password_auth_parsed() {
+        assert_eq!(
+            parse_password_auth("PasswordAuthentication yes\n"),
+            Some(true)
+        );
+        assert_eq!(
+            parse_password_auth("PasswordAuthentication no\n"),
+            Some(false)
+        );
+        assert_eq!(parse_password_auth("# nothing here\n"), None);
     }
 }

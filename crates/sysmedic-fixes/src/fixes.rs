@@ -287,6 +287,7 @@ mod tests {
             security: Some(SecurityInfo {
                 firewall_active: Some(false),
                 ssh_permit_root_login: None,
+                ssh_password_auth: None,
             }),
             ..Default::default()
         };
