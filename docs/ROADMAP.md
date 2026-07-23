@@ -75,7 +75,19 @@ issues), CI (fmt + clippy + tests + build), GPL-3.0.
 - (A resident D-Bus `sysmedicd` proved unnecessary: systemd timers *are* the
   scheduler, with a far smaller footprint than an always-on daemon.)
 
-## M6 — 1.0 release
-- Packaging: Flatpak (primary/Flathub), deb, AppImage, Snap
-- Optional LLM `Explainer` provider (opt-in, bring your own key)
-- Full ar/en localization pass, website, screenshots
+## M6 — 1.0 release ✅
+- Packaging (`packaging/`): a verified Debian/Ubuntu `.deb` build script, plus
+  Flatpak (GNOME runtime), AppImage and Snap manifests. The `.deb` is built and
+  smoke-checked in CI; a tag-triggered **release** workflow attaches it to the
+  GitHub release
+- Optional LLM `Explainer` (`sysmedic explain <id> --deep`): a raw-HTTP Claude
+  Messages API provider behind an injectable `HttpTransport` seam, so
+  request-building and response-parsing are unit-tested with a fake transport
+  and never touch the network. Strictly opt-in via `ANTHROPIC_API_KEY`
+  (`SYSMEDIC_LLM_MODEL` overrides the model); it sends only the finding id and
+  its evidence, and falls back silently to the offline answer on any error
+- Website (`docs/site/`, GitHub Pages workflow), `INSTALL.md`, `CHANGELOG.md`
+- (Note: submitting to Flathub and hosting the Pages site are the two remaining
+  manual steps — both need external accounts, not code. A full gettext migration
+  is tracked as a post-1.0 refinement; the app already ships complete built-in
+  en/ar strings and RTL.)

@@ -46,7 +46,7 @@ maintainability over ease of writing.
 | `sysmedic-core` | Domain | Data model, traits, engine, weighted health scoring, alert thresholds |
 | `sysmedic-collectors` | Infra | Read the system: CPU, memory, disks, thermal, processes, services, packages, boot, logs, network, security, battery, snap, flatpak, SMART, ports |
 | `sysmedic-diagnostics` | Infra | Pure rules `fn(&Snapshot) -> Vec<Finding>`; stable finding ids |
-| `sysmedic-knowledge` | Infra | Embedded bilingual (en/ar) explanations per finding id; `Explainer` trait for optional LLM backends (M6) |
+| `sysmedic-knowledge` | Infra | Embedded bilingual (en/ar) explanations per finding id; `Explainer` trait + opt-in `LlmExplainer` (Claude Messages API over a testable HTTP seam) |
 | `sysmedic-fixes` | Infra | Fix engine: plan → preview → apply → undo, with a `CommandRunner` seam and a transaction journal |
 | `sysmedic-diskscan` | Infra | Directory size tree + pure squarified-treemap layout |
 | `sysmedic-history` | Infra | Append-only health-score history (JSONL) + trend/sparkline |
@@ -95,5 +95,23 @@ service arrives in M5, where the scheduler genuinely needs a persistent process.
 ### AI Explain
 Offline-first: the embedded knowledge base answers the five questions (cause,
 dangerous?, impact, remedy, risk-if-ignored) with zero network access. The
-`Explainer` trait allows an optional LLM provider (e.g. Claude API) in M6 for
-deeper, context-aware explanations — strictly opt-in.
+`Explainer` trait allows an optional LLM provider for deeper, context-aware
+explanations — strictly opt-in. `LlmExplainer` (in `sysmedic-knowledge::llm`)
+implements it against the Claude Messages API: `sysmedic explain <id> --deep`
+enables it only when `ANTHROPIC_API_KEY` is set (`SYSMEDIC_LLM_MODEL` overrides
+the model, default `claude-opus-4-8`). It sends only the finding id and its
+evidence text — never files or credentials — and degrades silently to the
+offline answer on any error. Rust has no official Anthropic SDK, so it speaks
+the API over raw HTTP; the network call sits behind an `HttpTransport` trait, so
+request-building and response-parsing are unit-tested with a fake transport
+without ever touching the network.
+
+### Packaging & release
+`packaging/` holds all four distribution formats, each building from a release
+compile: a verified Debian/Ubuntu `.deb` (`deb/build-deb.sh`, exercised in CI),
+a Flatpak manifest (GNOME runtime + rust-stable SDK extension), an AppImage
+assembly script, and a Snap `snapcraft.yaml`. Every format installs the
+`sysmedic-fix-helper` and the polkit policy so the privilege model holds
+regardless of how SysMedic was installed. A tag-triggered `release` workflow
+builds the `.deb` and attaches it to the GitHub release; a `pages` workflow
+publishes the `docs/site/` landing page.

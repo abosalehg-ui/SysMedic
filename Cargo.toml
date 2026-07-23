@@ -28,6 +28,7 @@ clap = { version = "4", features = ["derive"] }
 owo-colors = "4"
 humantime = "2"
 once_cell = "1"
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 [profile.release]
 lto = "thin"

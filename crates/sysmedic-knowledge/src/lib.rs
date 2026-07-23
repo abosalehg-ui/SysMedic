@@ -11,6 +11,9 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 
+pub mod llm;
+pub use llm::{HttpTransport, LlmExplainer, DEFAULT_MODEL};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lang {
     En,

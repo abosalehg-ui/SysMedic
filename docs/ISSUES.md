@@ -73,6 +73,13 @@ initial M0/M1 increment; the rest are open work.
 40. ✅ PDF export (`checkup --format pdf` via headless browser, HTML fallback)
 
 ## M6 — 1.0
-41. Flatpak manifest + Flathub submission; deb/AppImage/Snap packaging
-42. Optional LLM Explainer provider (opt-in API key)
-43. Website + screenshots + release announcement
+41. ✅ Packaging: verified `.deb` build script + Flatpak/AppImage/Snap manifests
+    (`packaging/`); tag-triggered release workflow attaches the `.deb`.
+    Flathub submission remains a manual, account-gated step
+42. ✅ Optional LLM Explainer provider (`explain --deep`), opt-in via
+    `ANTHROPIC_API_KEY`, raw-HTTP Messages API behind a testable transport
+43. ✅ Website (`docs/site/` + Pages workflow) + `INSTALL.md` + `CHANGELOG.md`;
+    hosting the Pages site is the remaining manual step
+44. Full gettext localization migration (built-in en/ar strings ship today) —
+    post-1.0 refinement
+45. App icon PNG/SVG asset (placeholder shipped in the AppImage) — post-1.0

@@ -1,0 +1,60 @@
+# Flatpak manifest for SysMedic (GTK4/libadwaita, built with the GNOME runtime).
+#
+# Local build (needs flatpak + flatpak-builder + the GNOME SDK):
+#   flatpak install flathub org.gnome.Platform//47 org.gnome.Sdk//47 \
+#                           org.freedesktop.Sdk.Extension.rust-stable//24.08
+#   cd packaging/flatpak
+#   flatpak-builder --user --install --force-clean build io.github.abosalehg_ui.SysMedic.yaml
+#   flatpak run io.github.abosalehg_ui.SysMedic
+#
+# For a Flathub submission the network-less builder needs a generated
+# cargo-sources.json (see README-flatpak.md); `build-args: --share=network`
+# below lets a local build fetch crates directly instead.
+id: io.github.abosalehg_ui.SysMedic
+runtime: org.gnome.Platform
+runtime-version: "47"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: sysmedic-gui
+finish-args:
+  # Native GNOME windowing.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  # A system doctor needs to read the host to diagnose it (read-only where possible).
+  - --filesystem=host:ro
+  - --filesystem=/var/log:ro
+  # Deep explanations are opt-in and reach the Claude API only when a key is set.
+  - --share=network
+  # Talk to systemd (services, boot, scheduled timers) and notifications.
+  - --system-talk-name=org.freedesktop.systemd1
+  - --talk-name=org.freedesktop.Notifications
+  # Privileged fixes are authorized through the host's polkit.
+  - --system-talk-name=org.freedesktop.PolicyKit1
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/sysmedic/cargo
+modules:
+  - name: sysmedic
+    buildsystem: simple
+    build-options:
+      build-args:
+        # Remove this and ship cargo-sources.json for a reproducible Flathub build.
+        - --share=network
+    build-commands:
+      - cargo build --release --locked -p sysmedic-cli -p sysmedic-daemon -p sysmedic-gui
+      - install -Dm755 target/release/sysmedic /app/bin/sysmedic
+      - install -Dm755 target/release/sysmedic-gui /app/bin/sysmedic-gui
+      - install -Dm755 target/release/sysmedic-fix-helper /app/libexec/sysmedic-fix-helper
+      - install -Dm644 data/io.github.abosalehg_ui.SysMedic.desktop
+        /app/share/applications/io.github.abosalehg_ui.SysMedic.desktop
+      - install -Dm644 data/io.github.abosalehg_ui.SysMedic.metainfo.xml
+        /app/share/metainfo/io.github.abosalehg_ui.SysMedic.metainfo.xml
+      - install -Dm644 data/io.github.abosalehg_ui.sysmedic.policy
+        /app/share/polkit-1/actions/io.github.abosalehg_ui.sysmedic.policy
+    sources:
+      - type: dir
+        path: ../..

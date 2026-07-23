@@ -41,3 +41,11 @@ jobs:
           ./target/release/sysmedic monitor --quiet
           ./target/release/sysmedic history
           ./target/release/sysmedic schedule status
+      - name: Smoke-run deep-explain fallback (no API key -> offline answer)
+        run: ./target/release/sysmedic explain storage.disk_nearly_full --deep
+      - name: Build & verify the .deb
+        run: |
+          cargo build --release -p sysmedic-gui
+          packaging/deb/build-deb.sh
+          dpkg-deb --info sysmedic_*.deb
+          dpkg-deb --contents sysmedic_*.deb | grep -q usr/bin/sysmedic

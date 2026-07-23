@@ -45,7 +45,7 @@ of a doctor's visit:
 | **Diagnose** | 21+ rules: slow boot, full disks, zombie processes, overheating, failed services, broken/old packages, huge logs, snap bloat, DNS issues, SSH root login, inactive firewall... |
 | **Explain** | Every finding answers, offline and in English + العربية: what caused it? is it dangerous? what's the impact? how do I fix it? what if I ignore it? |
 | **Prescribe** | One-click safe fixes with a mandatory preview (what runs, which files change, is it reversible) and undo, authorized via polkit — the app never runs as root |
-| **Follow-up** | Scheduled checkups and proactive notifications (M5) |
+| **Follow-up** | Scheduled checkups, proactive notifications and a health-score trend |
 
 ## The desktop app (M2)
 
@@ -128,6 +128,22 @@ notifications for disk-full, overheating, low-RAM and pending-security-update
 alerts, and appends to a health-score history the GUI shows as a trend strip.
 PDF export prints the HTML report through a headless browser, falling back to
 HTML when none is installed.
+
+## Install & 1.0 (M6)
+
+Grab a `.deb` from [Releases](https://github.com/abosalehg-ui/SysMedic/releases)
+(`sudo apt install ./sysmedic_*.deb`) or build from source — see
+[INSTALL.md](INSTALL.md). Flatpak, AppImage and Snap manifests live in
+[`packaging/`](packaging/README.md).
+
+**Optional AI deep-explain** — the offline explanations always work with no
+network. If you want deeper, machine-specific answers you can bring your own
+Claude API key; it is strictly opt-in and sends only the finding id + evidence:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+sysmedic explain storage.disk_nearly_full --deep
+```
 
 ## Project
 
