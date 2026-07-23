@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/abosalehg-ui/SysMedic"
+authors = ["SysMedic contributors"]
+
+[workspace.dependencies]
+sysmedic-core = { path = "crates/sysmedic-core" }
+sysmedic-collectors = { path = "crates/sysmedic-collectors" }
+sysmedic-diagnostics = { path = "crates/sysmedic-diagnostics" }
+sysmedic-knowledge = { path = "crates/sysmedic-knowledge" }
+sysmedic-fixes = { path = "crates/sysmedic-fixes" }
+sysmedic-report = { path = "crates/sysmedic-report" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+owo-colors = "4"
+humantime = "2"
+once_cell = "1"
+
+[profile.release]
+lto = "thin"
+strip = true

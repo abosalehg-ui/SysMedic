@@ -1,0 +1,10 @@
+[package]
+name = "sysmedic-fixes"
+description = "Safe, previewable, undoable fixes for SysMedic (execution lands in M3)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sysmedic-core = { workspace = true }
