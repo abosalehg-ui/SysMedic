@@ -1,11 +1,16 @@
 [package]
 name = "sysmedic-daemon"
-description = "sysmedicd — privileged D-Bus helper, scheduler and notifications (lands in M3/M5)"
+description = "sysmedic-fix-helper — the privileged, polkit-authorized fix executor for SysMedic"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "sysmedicd"
+name = "sysmedic-fix-helper"
 path = "src/main.rs"
+
+[dependencies]
+sysmedic-core = { workspace = true }
+sysmedic-collectors = { workspace = true }
+sysmedic-fixes = { workspace = true }

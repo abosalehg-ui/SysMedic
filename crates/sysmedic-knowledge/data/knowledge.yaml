@@ -225,6 +225,20 @@
     remedy: "نفّذ sudo snap set system refresh.retain=2 ثم أزل المراجعات المعطلة بـ snap remove --revision."
     risk_if_ignored: "فقط مساحة مهدرة تنمو مع كل تحديث."
 
+- id: flatpak.unused_runtimes
+  en:
+    cause: "Flatpak installs a shared runtime for each app; when you remove the app, its runtime can be left behind."
+    dangerous: "No — purely disk usage."
+    impact: "Each runtime is hundreds of megabytes to gigabytes of unused data."
+    remedy: "Run flatpak uninstall --unused (safe: it only removes runtimes no installed app needs)."
+    risk_if_ignored: "Only wasted disk space; it never shrinks on its own."
+  ar:
+    cause: "يثبّت Flatpak بيئة تشغيل مشتركة لكل تطبيق؛ وعند إزالة التطبيق قد تبقى بيئته."
+    dangerous: "لا — مجرد استهلاك قرص."
+    impact: "كل بيئة تشغيل مئات الميغابايتات إلى غيغابايتات من البيانات غير المستخدمة."
+    remedy: "نفّذ flatpak uninstall --unused (آمن: يزيل فقط البيئات التي لا يحتاجها أي تطبيق مثبّت)."
+    risk_if_ignored: "فقط مساحة مهدرة لا تتقلص من تلقاء نفسها."
+
 - id: battery.degraded
   en:
     cause: "Lithium batteries chemically age with charge cycles, heat and time; full capacity shrinks."

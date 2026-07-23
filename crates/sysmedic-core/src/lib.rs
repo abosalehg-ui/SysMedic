@@ -2,7 +2,7 @@
 //!
 //! Everything here is platform-agnostic and free of I/O: the data model
 //! ([`Snapshot`], [`Finding`], [`HealthReport`]), the extension points
-//! ([`Collector`], [`Diagnostic`], [`fix::Fixer`]) and the [`Engine`] that
+//! ([`Collector`], [`Diagnostic`], [`fix::FixPlan`]) and the [`Engine`] that
 //! orchestrates a checkup. Infrastructure crates plug into these traits.
 
 pub mod engine;

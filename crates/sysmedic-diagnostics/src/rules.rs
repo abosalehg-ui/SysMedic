@@ -396,6 +396,31 @@ pub mod snap {
     }
 }
 
+pub mod flatpak {
+    use sysmedic_core::{Category, Finding, Severity, Snapshot};
+
+    pub fn unused_runtimes(s: &Snapshot) -> Vec<Finding> {
+        let Some(flatpak) = &s.flatpak else {
+            return vec![];
+        };
+        if flatpak.unused_refs.is_empty() {
+            return vec![];
+        }
+        vec![Finding::new(
+            "flatpak.unused_runtimes",
+            Category::Storage,
+            Severity::Low,
+            format!(
+                "{} unused Flatpak runtime(s) installed",
+                flatpak.unused_refs.len()
+            ),
+            "Flatpak runtimes left behind by removed apps still occupy disk space.",
+        )
+        .with_evidence(flatpak.unused_refs.clone())
+        .with_fix_hint("flatpak uninstall --unused")]
+    }
+}
+
 pub mod battery {
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
@@ -663,6 +688,9 @@ mod tests {
         s.snap = Some(SnapInfo {
             disabled_revisions: 3,
             snaps_dir_bytes: None,
+        });
+        s.flatpak = Some(FlatpakInfo {
+            unused_refs: vec!["runtime/org.freedesktop.Platform/x86_64/23.08".into()],
         });
         s.battery = Some(BatteryInfo {
             capacity_percent: Some(50),

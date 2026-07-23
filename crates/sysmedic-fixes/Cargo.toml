@@ -1,6 +1,6 @@
 [package]
 name = "sysmedic-fixes"
-description = "Safe, previewable, undoable fixes for SysMedic (execution lands in M3)"
+description = "Safe, previewable, undoable fixes for SysMedic with a transaction journal"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,3 +8,10 @@ repository.workspace = true
 
 [dependencies]
 sysmedic-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+humantime = { workspace = true }
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

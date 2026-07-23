@@ -17,6 +17,14 @@ pub struct Strings {
     pub suggested_command: &'static str,
     pub skipped_checks: &'static str,
     pub checkup_failed: &'static str,
+    pub apply_fix: &'static str,
+    pub confirm_fix_title: &'static str,
+    pub cancel: &'static str,
+    pub apply: &'static str,
+    pub reversible_yes: &'static str,
+    pub reversible_no: &'static str,
+    pub about: &'static str,
+    pub app_comment: &'static str,
 }
 
 impl Strings {
@@ -33,6 +41,15 @@ impl Strings {
                 suggested_command: "Suggested command",
                 skipped_checks: "Skipped checks",
                 checkup_failed: "The checkup failed unexpectedly. Please try again.",
+                apply_fix: "Apply fix",
+                confirm_fix_title: "Apply this fix?",
+                cancel: "Cancel",
+                apply: "Apply",
+                reversible_yes: "This fix can be undone.",
+                reversible_no: "This fix cannot be undone.",
+                about: "About SysMedic",
+                app_comment:
+                    "A doctor for your Linux system: checkup, diagnose, explain, prescribe.",
             },
             Lang::Ar => &Strings {
                 health_score: "الدرجة الصحية",
@@ -45,6 +62,14 @@ impl Strings {
                 suggested_command: "الأمر المقترح",
                 skipped_checks: "فحوص متخطاة",
                 checkup_failed: "فشل الفحص بشكل غير متوقع. حاول مرة أخرى.",
+                apply_fix: "تطبيق الإصلاح",
+                confirm_fix_title: "تطبيق هذا الإصلاح؟",
+                cancel: "إلغاء",
+                apply: "تطبيق",
+                reversible_yes: "يمكن التراجع عن هذا الإصلاح.",
+                reversible_no: "لا يمكن التراجع عن هذا الإصلاح.",
+                about: "عن SysMedic",
+                app_comment: "طبيب لنظام لينكس: فحص، تشخيص، شرح، ووصف علاج آمن.",
             },
         }
     }

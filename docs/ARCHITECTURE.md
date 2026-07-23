@@ -13,14 +13,15 @@ engine.
 │                diagnostics → findings → health score     │
 ├──────────────────────────────────────────────────────────┤
 │ Domain         sysmedic-core: Snapshot, Finding,         │
-│ (no I/O)       Severity, Category, HealthReport,         │
-│                traits Collector / Diagnostic / Fixer     │
+│ (no I/O)       Severity, Category, HealthReport, FixPlan,│
+│                traits Collector / Diagnostic            │
 ├──────────────────────────────────────────────────────────┤
 │ Infrastructure sysmedic-collectors (procfs, sysfs,       │
-│                systemd, dpkg/apt, snap, sshd, ufw)       │
+│                systemd, dpkg/apt, snap, flatpak, ufw)   │
 │                sysmedic-knowledge (embedded YAML, en/ar) │
-│                sysmedic-fixes, sysmedic-report,          │
-│                sysmedic-daemon (D-Bus + polkit, M3)      │
+│                sysmedic-fixes (engine + journal),        │
+│                sysmedic-report, sysmedic-daemon          │
+│                (sysmedic-fix-helper: pkexec + polkit)    │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -43,14 +44,14 @@ maintainability over ease of writing.
 | Crate | Layer | Responsibility |
 |---|---|---|
 | `sysmedic-core` | Domain | Data model, traits, engine, weighted health scoring |
-| `sysmedic-collectors` | Infra | Read the system: CPU, memory, disks, thermal, processes, services, packages, boot, logs, network, security, battery, snap |
+| `sysmedic-collectors` | Infra | Read the system: CPU, memory, disks, thermal, processes, services, packages, boot, logs, network, security, battery, snap, flatpak |
 | `sysmedic-diagnostics` | Infra | Pure rules `fn(&Snapshot) -> Vec<Finding>`; stable finding ids |
 | `sysmedic-knowledge` | Infra | Embedded bilingual (en/ar) explanations per finding id; `Explainer` trait for optional LLM backends (M6) |
-| `sysmedic-fixes` | Infra | Fix contract + implementations (M3): preview, dry-run, undo journal |
+| `sysmedic-fixes` | Infra | Fix engine: plan → preview → apply → undo, with a `CommandRunner` seam and a transaction journal |
 | `sysmedic-report` | Infra | JSON / Markdown / HTML rendering (PDF via HTML print, M5) |
-| `sysmedic-daemon` | Infra | `sysmedicd`: privileged D-Bus helper + polkit (M3), scheduler + notifications (M5) |
-| `sysmedic-cli` | Presentation | `sysmedic checkup / checks / explain` |
-| `sysmedic-gui` | Presentation | GTK4/libadwaita app (M2) |
+| `sysmedic-daemon` | Infra | `sysmedic-fix-helper`: the pkexec/polkit-authorized privileged fix executor (resident `sysmedicd` scheduler service arrives in M5) |
+| `sysmedic-cli` | Presentation | `sysmedic checkup / checks / explain / fix / undo` |
+| `sysmedic-gui` | Presentation | GTK4/libadwaita app |
 
 ## Key design decisions
 
@@ -70,12 +71,24 @@ against fixture strings (`parse_meminfo`, `parse_blame`, `parse_df`, ...).
 Diagnostics are pure and tested against fixture snapshots. A knowledge-base
 test asserts every finding id has an English **and** Arabic explanation.
 
-### Privilege model (M3)
-The GUI/CLI never run as root. Fixes execute in `sysmedicd`, a small D-Bus
-system service authorized per-action via polkit. Every fix must present a
-`FixPlan` — description, exact commands, affected paths, reversibility, undo
-procedure, risk — before the user can confirm. Applied fixes are recorded in a
-transaction journal that powers undo.
+### Privilege model
+The GUI/CLI never run as root. On confirmation they launch
+`sysmedic-fix-helper` through **pkexec**, which asks **polkit** to authorize
+the `io.github.abosalehg_ui.sysmedic.run-fix` action; only then does the helper
+run as root. The trust boundary is deliberately narrow: the helper accepts a
+fix **id** only — never a command or a serialized plan — and rebuilds the plan
+itself from a fresh privileged snapshot, so a compromised unprivileged caller
+cannot inject commands. Every fix must present a `FixPlan` (description, exact
+structured commands, affected paths, reversibility, undo commands, risk) before
+the user can confirm; the same plan drives both the preview and the run. Applied
+fixes are recorded in a transaction journal (`/var/lib/sysmedic/journal.json`)
+that powers undo. The fix engine itself is pure and unit-tested through a
+`CommandRunner` seam, so the security-critical logic is verified without
+touching the system.
+
+An on-demand pkexec helper (rather than a resident D-Bus daemon) is the right
+fit for M3: it has no long-running root surface. The resident `sysmedicd`
+service arrives in M5, where the scheduler genuinely needs a persistent process.
 
 ### AI Explain
 Offline-first: the embedded knowledge base answers the five questions (cause,
