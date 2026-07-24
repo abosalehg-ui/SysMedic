@@ -2,8 +2,9 @@
 # Build a Debian/Ubuntu .deb for SysMedic.
 #
 # Produces sysmedic_<version>_<arch>.deb containing the CLI, the polkit-authorized
-# fix helper, the GUI (if it was built), the .desktop/AppStream/polkit assets and
-# the systemd user timer template. Run from the repository root after:
+# fix helper, the GUI (if it was built), and the .desktop/AppStream/polkit assets.
+# (The systemd user timer is generated at runtime by `sysmedic schedule`, not
+# shipped in the package.) Run from the repository root after:
 #
 #   cargo build --release -p sysmedic-cli -p sysmedic-daemon [-p sysmedic-gui]
 #
@@ -26,8 +27,10 @@ echo "Packaging SysMedic $VERSION ($ARCH)"
 # --- Binaries -------------------------------------------------------------
 install -Dm755 target/release/sysmedic          "$STAGE/usr/bin/sysmedic"
 install -Dm755 target/release/sysmedic-fix-helper "$STAGE/usr/libexec/sysmedic-fix-helper"
+GUI_PACKAGED=0
 if [[ -x target/release/sysmedic-gui ]]; then
   install -Dm755 target/release/sysmedic-gui    "$STAGE/usr/bin/sysmedic-gui"
+  GUI_PACKAGED=1
 else
   echo "note: target/release/sysmedic-gui not found — packaging CLI only"
 fi
@@ -47,14 +50,25 @@ install -Dm644 README.md "$STAGE/usr/share/doc/sysmedic/README.md"
 # --- Control metadata -----------------------------------------------------
 INSTALLED_KB="$(du -ks "$STAGE" | cut -f1)"
 mkdir -p "$STAGE/DEBIAN"
+
+# The GUI links GTK4/libadwaita, so when it is packaged those are hard
+# dependencies — as Recommends they could be skipped (apt --no-install-recommends),
+# yielding a GUI binary that can't start. smartmontools stays a Recommends
+# (SMART checks degrade gracefully without it).
+DEPENDS="libc6, policykit-1 | polkit"
+RECOMMENDS="smartmontools"
+if [[ "$GUI_PACKAGED" -eq 1 ]]; then
+  DEPENDS="$DEPENDS, libgtk-4-1 (>= 4.6), libadwaita-1-0 (>= 1.2)"
+fi
+
 cat > "$STAGE/DEBIAN/control" <<EOF
 Package: sysmedic
 Version: $VERSION
 Section: utils
 Priority: optional
 Architecture: $ARCH
-Depends: libc6, policykit-1 | polkit
-Recommends: libgtk-4-1, libadwaita-1-0, smartmontools
+Depends: $DEPENDS
+Recommends: $RECOMMENDS
 Suggests: chromium | chromium-browser | wkhtmltopdf
 Installed-Size: $INSTALLED_KB
 Maintainer: abosalehg-ui <ar0.history@gmail.com>

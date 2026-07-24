@@ -10,7 +10,11 @@ description: |
   a full-featured CLI.
 
 grade: stable
-confinement: classic  # a system doctor needs broad read access to diagnose the host
+# Strict confinement: snapcraft rejects the gnome extension (which wires in the
+# GTK runtime) under classic confinement, so we use strict and request the
+# observation interfaces a system doctor needs. Some deep diagnostics that need
+# unmediated host access work best from the .deb; the snap degrades gracefully.
+confinement: strict
 
 platforms:
   amd64:
@@ -19,16 +23,18 @@ platforms:
 apps:
   sysmedic:
     command: bin/sysmedic
+    # Read-only system observation for the diagnostics.
+    plugs: [system-observe, hardware-observe, mount-observe, log-observe, network-observe]
   sysmedic-gui:
     command: bin/sysmedic-gui
     extensions: [gnome]
     desktop: share/applications/io.github.abosalehg_ui.SysMedic.desktop
+    plugs: [system-observe, hardware-observe, mount-observe, log-observe, network-observe]
 
 parts:
   sysmedic:
     plugin: rust
     source: .
-    rust-path: [crates/sysmedic-cli]
     build-packages:
       - libgtk-4-dev
       - libadwaita-1-dev

@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel superseded runs on the same ref so pushes to a PR don't pile up.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -25,9 +30,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
       - name: Build CLI + fix helper (release)
-        run: cargo build --release -p sysmedic-cli -p sysmedic-daemon
+        run: cargo build --release --locked -p sysmedic-cli -p sysmedic-daemon
       - name: Smoke-run checkup
         run: ./target/release/sysmedic checkup --format json | head -c 2000
       - name: Smoke-run fix listing
