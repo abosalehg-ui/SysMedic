@@ -104,6 +104,23 @@ pub fn largest_children(node: &Node, limit: usize) -> Vec<&Node> {
     node.children.iter().take(limit).collect()
 }
 
+/// Human-readable byte size, e.g. `512 B`, `1.5 KiB`, `5.0 GiB`. Shared by the
+/// CLI and GUI so the two can't drift.
+pub fn human_size(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let mut size = bytes as f64;
+    let mut unit = 0;
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{size:.1} {}", UNITS[unit])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

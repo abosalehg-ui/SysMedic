@@ -73,3 +73,43 @@ pub fn render(report: &HealthReport, lang: Lang) -> String {
     }
     out
 }
+
+/// Remove ANSI SGR escape sequences. Used when the rendered report is written
+/// to a file or a pipe (or `NO_COLOR` is set), so it isn't polluted with raw
+/// `\x1b[..m` codes.
+pub fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            // Consume a CSI sequence: '[' then params up to a letter terminator.
+            if let Some('[') = chars.clone().next() {
+                chars.next();
+                for d in chars.by_ref() {
+                    if d.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_color_codes() {
+        let colored = format!("{}{}{}", "\u{1b}[32m", "hi", "\u{1b}[0m");
+        assert_eq!(strip_ansi(&colored), "hi");
+    }
+
+    #[test]
+    fn leaves_plain_text_untouched() {
+        assert_eq!(strip_ansi("no color here"), "no color here");
+    }
+}
