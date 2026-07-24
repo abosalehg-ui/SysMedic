@@ -48,8 +48,8 @@ enum Command {
         id: String,
         #[arg(long, value_enum)]
         lang: Option<CliLang>,
-        /// Extra evidence to pass to a deep explanation (with --deep)
-        #[arg(long)]
+        /// Extra evidence to pass to a deep explanation (requires --deep)
+        #[arg(long, requires = "deep")]
         context: Option<String>,
         /// Ask Claude for a deeper, context-aware explanation (needs
         /// ANTHROPIC_API_KEY; falls back to the offline answer)
@@ -174,13 +174,24 @@ fn main() -> Result<()> {
                 return Ok(());
             }
 
-            let rendered = match format {
+            let mut rendered = match format {
                 Format::Text => text::render(&report, lang),
                 Format::Json => sysmedic_report::to_json(&report),
                 Format::Markdown => sysmedic_report::to_markdown(&report, lang),
                 Format::Html => sysmedic_report::to_html(&report, lang),
                 Format::Pdf => unreachable!("handled above"),
             };
+            // Only colorize interactive terminal output. When writing to a file
+            // or a pipe, or when NO_COLOR is set, strip the ANSI codes so the
+            // text report isn't polluted with raw escape sequences.
+            if format == Format::Text {
+                let to_tty = output.is_none()
+                    && std::io::IsTerminal::is_terminal(&std::io::stdout())
+                    && std::env::var_os("NO_COLOR").is_none();
+                if !to_tty {
+                    rendered = text::strip_ansi(&rendered);
+                }
+            }
             match output {
                 Some(path) => {
                     fs::write(&path, rendered)?;
@@ -254,4 +265,17 @@ fn main() -> Result<()> {
         },
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::CommandFactory as _;
+
+    #[test]
+    fn cli_definition_is_valid() {
+        // Catches clap misconfiguration such as a `requires` pointing at an
+        // argument id that doesn't exist.
+        Cli::command().debug_assert();
+    }
 }

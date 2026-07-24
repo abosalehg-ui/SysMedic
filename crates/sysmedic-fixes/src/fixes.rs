@@ -11,6 +11,15 @@ pub trait Fix: Send + Sync {
     fn id(&self) -> &'static str;
     /// Build the plan for this system, or `None` if there is nothing to do.
     fn plan(&self, snapshot: &Snapshot) -> Option<FixPlan>;
+    /// The commands that reverse this fix, or empty if it is irreversible.
+    ///
+    /// This is the single source of truth for undo: it is compiled in and
+    /// snapshot-independent, so the privileged helper can rebuild it from the
+    /// fix id alone rather than trusting commands read back from the journal
+    /// file (which an attacker who could write that file might tamper with).
+    fn undo(&self) -> Vec<FixCommand> {
+        Vec::new()
+    }
 }
 
 fn gib(bytes: u64) -> f64 {
@@ -106,6 +115,12 @@ impl Fix for SnapRetain {
     fn id(&self) -> &'static str {
         "fix.snap_retain"
     }
+    fn undo(&self) -> Vec<FixCommand> {
+        vec![FixCommand::new(
+            "snap",
+            &["set", "system", "refresh.retain=3"],
+        )]
+    }
     fn plan(&self, s: &Snapshot) -> Option<FixPlan> {
         let snap = s.snap.as_ref()?;
         if snap.disabled_revisions == 0 {
@@ -125,10 +140,7 @@ impl Fix for SnapRetain {
             )],
             affected_paths: vec!["/var/lib/snapd/snaps".into()],
             reversible: true,
-            undo: vec![FixCommand::new(
-                "snap",
-                &["set", "system", "refresh.retain=3"],
-            )],
+            undo: self.undo(),
             risk: Severity::Low,
             needs_root: true,
         })
@@ -167,6 +179,9 @@ impl Fix for EnableUfw {
     fn id(&self) -> &'static str {
         "fix.enable_ufw"
     }
+    fn undo(&self) -> Vec<FixCommand> {
+        vec![FixCommand::new("ufw", &["disable"])]
+    }
     fn plan(&self, s: &Snapshot) -> Option<FixPlan> {
         if s.security.as_ref()?.firewall_active != Some(false) {
             return None;
@@ -180,7 +195,7 @@ impl Fix for EnableUfw {
             commands: vec![FixCommand::new("ufw", &["--force", "enable"])],
             affected_paths: vec!["/etc/ufw".into(), "/lib/systemd/system/ufw.service".into()],
             reversible: true,
-            undo: vec![FixCommand::new("ufw", &["disable"])],
+            undo: self.undo(),
             risk: Severity::Low,
             needs_root: true,
         })
@@ -202,6 +217,16 @@ pub fn all() -> Vec<Box<dyn Fix>> {
 /// Look up a fix by id.
 pub fn find(id: &str) -> Option<Box<dyn Fix>> {
     all().into_iter().find(|f| f.id() == id)
+}
+
+/// The compiled-in undo commands for a fix id, or `None` if the id is unknown.
+/// A known but irreversible fix yields `Some(vec![])`.
+///
+/// `undo` uses this instead of the commands stored in the journal, so the
+/// privileged helper trusts only the fix id — mirroring how `apply` rebuilds
+/// the plan from the id rather than accepting commands from its caller.
+pub fn undo_commands(id: &str) -> Option<Vec<FixCommand>> {
+    Some(find(id)?.undo())
 }
 
 /// Every fix id, for validation in the privileged helper.
@@ -241,6 +266,21 @@ mod tests {
             assert!(find(id).is_some(), "no fix for {id}");
         }
         assert!(find("fix.nonexistent").is_none());
+    }
+
+    #[test]
+    fn undo_commands_come_from_the_registry() {
+        assert_eq!(
+            undo_commands("fix.enable_ufw").unwrap()[0].display(),
+            "ufw disable"
+        );
+        assert_eq!(
+            undo_commands("fix.snap_retain").unwrap()[0].display(),
+            "snap set system refresh.retain=3"
+        );
+        // Known but irreversible → empty; unknown id → None (helper refuses it).
+        assert!(undo_commands("fix.apt_clean").unwrap().is_empty());
+        assert!(undo_commands("fix.nonexistent").is_none());
     }
 
     #[test]

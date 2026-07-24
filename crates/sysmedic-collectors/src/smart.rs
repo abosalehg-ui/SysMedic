@@ -24,12 +24,19 @@ impl Collector for SmartCollector {
         let mut out = Vec::new();
         let mut denied = false;
         for dev in devices {
-            match util::run("smartctl", &["-j", "-H", "-A", "-i", &dev]) {
-                Some(json) => {
-                    if let Some(parsed) = parse_device(&json) {
-                        out.push(parsed);
-                    }
-                }
+            // `smartctl` reports health via a *bitmask* exit status: bit 3 is
+            // set when the disk is FAILING, so a dying drive exits non-zero
+            // while still printing valid JSON with `smart_status.passed=false`.
+            // We therefore parse the stdout regardless of the exit code, and
+            // only treat a spawn/timeout failure — or output with no health
+            // signal at all (e.g. a device we lacked permission to open) — as
+            // "denied". Using `run` here (success-only) would silently drop
+            // exactly the failing drives the `smart.failing` rule exists for.
+            match util::run_captured("smartctl", &["-j", "-H", "-A", "-i", &dev]) {
+                Some(output) => match parse_device(&output.stdout) {
+                    Some(parsed) => out.push(parsed),
+                    None => denied = true,
+                },
                 None => denied = true,
             }
         }
@@ -89,6 +96,18 @@ pub fn parse_device(json: &str) -> Option<SmartDevice> {
         .as_u64()
         .or_else(|| v["power_on_time"]["hours"].as_u64());
 
+    // If none of the health signals are present, smartctl parsed but could not
+    // actually read the device (typically a permission error without root, or
+    // an unsupported bridge). Don't fabricate a "healthy" entry that would
+    // inflate the storage score — let the caller record it as unreadable.
+    if health_passed.is_none()
+        && temperature_c.is_none()
+        && reallocated_sectors.is_none()
+        && wear_percent.is_none()
+    {
+        return None;
+    }
+
     Some(SmartDevice {
         device,
         model,
@@ -131,6 +150,28 @@ mod tests {
         assert_eq!(d.reallocated_sectors, Some(8));
         assert_eq!(d.power_on_hours, Some(12000));
         assert_eq!(d.wear_percent, None);
+    }
+
+    #[test]
+    fn keeps_a_failing_drive_reported_with_passed_false() {
+        // A dying drive: smartctl exits non-zero (bit 3) but still emits this
+        // JSON. parse_device must keep it so `smart.failing` can fire.
+        let json = r#"{
+            "device": {"name": "/dev/sda"},
+            "model_name": "Seagate ST2000",
+            "smart_status": {"passed": false},
+            "temperature": {"current": 41}
+        }"#;
+        let d = parse_device(json).unwrap();
+        assert_eq!(d.health_passed, Some(false));
+    }
+
+    #[test]
+    fn drops_device_with_no_health_signal() {
+        // smartctl without permission to open the device: valid JSON, but no
+        // smart_status / temperature / attributes. Must not become an entry.
+        let json = r#"{"device":{"name":"/dev/sda"},"smartctl":{"exit_status":2}}"#;
+        assert!(parse_device(json).is_none());
     }
 
     #[test]

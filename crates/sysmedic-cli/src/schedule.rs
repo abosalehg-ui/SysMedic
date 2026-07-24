@@ -43,22 +43,29 @@ impl Cadence {
 
 /// The `.service` unit that runs one checkup.
 pub fn service_unit(exe: &str) -> String {
+    // The executable path is quoted so a path containing spaces (e.g. under
+    // `~/My Apps/`) still produces a valid `ExecStart`. systemd unquotes it
+    // back into a single argv[0].
     format!(
         "[Unit]\n\
          Description=SysMedic scheduled checkup\n\n\
          [Service]\n\
          Type=oneshot\n\
-         ExecStart={exe} monitor\n"
+         ExecStart=\"{exe}\" monitor\n"
     )
 }
 
 /// The `.timer` unit that triggers the service on `cadence`.
 pub fn timer_unit(cadence: Cadence) -> String {
+    // `RandomizedDelaySec` actually spreads the load across machines — the base
+    // `OnCalendar` time is identical everywhere, so without this every host
+    // would fire at the same instant.
     format!(
         "[Unit]\n\
          Description=SysMedic {} checkup timer\n\n\
          [Timer]\n\
          OnCalendar={}\n\
+         RandomizedDelaySec=1h\n\
          Persistent=true\n\n\
          [Install]\n\
          WantedBy=timers.target\n",
@@ -163,8 +170,14 @@ mod tests {
     #[test]
     fn service_unit_runs_monitor() {
         let unit = service_unit("/usr/bin/sysmedic");
-        assert!(unit.contains("ExecStart=/usr/bin/sysmedic monitor"));
+        assert!(unit.contains("ExecStart=\"/usr/bin/sysmedic\" monitor"));
         assert!(unit.contains("Type=oneshot"));
+    }
+
+    #[test]
+    fn service_unit_quotes_paths_with_spaces() {
+        let unit = service_unit("/home/a/My Apps/sysmedic");
+        assert!(unit.contains("ExecStart=\"/home/a/My Apps/sysmedic\" monitor"));
     }
 
     #[test]
@@ -173,5 +186,7 @@ mod tests {
         assert!(timer_unit(Cadence::Weekly).contains("OnCalendar=Mon *-*-* 09:17:00"));
         assert!(timer_unit(Cadence::Monthly).contains("OnCalendar=*-*-01 09:17:00"));
         assert!(timer_unit(Cadence::Daily).contains("WantedBy=timers.target"));
+        // Load is spread across machines rather than all firing at 09:17.
+        assert!(timer_unit(Cadence::Daily).contains("RandomizedDelaySec="));
     }
 }

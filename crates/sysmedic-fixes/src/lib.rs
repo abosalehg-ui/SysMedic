@@ -17,7 +17,7 @@ pub mod journal;
 use std::path::{Path, PathBuf};
 
 pub use command::{CommandRunner, RealRunner, RecordingRunner};
-pub use fixes::{fix_for_finding, Fix, FIX_IDS};
+pub use fixes::{fix_for_finding, undo_commands, Fix, FIX_IDS};
 pub use journal::{Journal, JournalEntry};
 use sysmedic_core::fix::FixPlan;
 use sysmedic_core::Snapshot;
@@ -75,12 +75,20 @@ pub fn apply(
 }
 
 /// Undo the most recent reversible transaction in `journal`.
+///
+/// The commands to run are rebuilt from the compiled-in fix registry keyed on
+/// the entry's `fix_id`, **not** taken from the `undo` commands stored in the
+/// journal file. This keeps the trust boundary the same as `apply`: even if
+/// the journal on disk were tampered with, `undo` can only run the fixed,
+/// audited undo commands of a known fix — never arbitrary injected commands.
 pub fn undo(runner: &dyn CommandRunner, journal: &mut Journal) -> Result<String, String> {
     let (index, entry) = journal
         .last_undoable()
         .ok_or("nothing to undo — no reversible fix has been applied")?;
-    let (title, undo_commands) = (entry.title.clone(), entry.undo.clone());
-    for command in &undo_commands {
+    let (title, fix_id) = (entry.title.clone(), entry.fix_id.clone());
+    let commands = fixes::undo_commands(&fix_id)
+        .ok_or_else(|| format!("cannot undo unknown fix '{fix_id}'"))?;
+    for command in &commands {
         runner.run(command)?;
     }
     journal.mark_undone(index)?;
@@ -156,6 +164,31 @@ mod tests {
         assert_eq!(commands.last().unwrap().display(), "ufw disable");
         // Second undo finds nothing left.
         assert!(undo(&runner, &mut journal).is_err());
+    }
+
+    #[test]
+    fn undo_ignores_tampered_commands_in_the_journal() {
+        // Simulate an attacker-tampered journal: a legitimate fix id but a
+        // malicious stored `undo` command. `undo` must run the registry's undo
+        // (`ufw disable`), never the injected command.
+        let runner = RecordingRunner::new();
+        let dir = tempfile::tempdir().unwrap();
+        let mut journal = Journal::load(dir.path().join("j.json")).unwrap();
+        journal
+            .record(JournalEntry {
+                fix_id: "fix.enable_ufw".into(),
+                title: "Enable the firewall".into(),
+                applied_at: "2026-07-24T00:00:00Z".into(),
+                reversible: true,
+                undo: vec![sysmedic_core::fix::FixCommand::new("rm", &["-rf", "/"])],
+                undone: false,
+            })
+            .unwrap();
+
+        undo(&runner, &mut journal).unwrap();
+        let commands = runner.commands();
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].display(), "ufw disable");
     }
 
     #[test]

@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::finding::Severity;
 use crate::snapshot::Snapshot;
+use crate::thresholds;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Alert {
@@ -25,10 +26,10 @@ pub fn evaluate(snapshot: &Snapshot) -> Vec<Alert> {
     if let Some(disks) = &snapshot.disks {
         for disk in disks {
             let used = disk.used_percent();
-            if used >= 90.0 {
+            if used >= thresholds::disk::ALERT_PCT {
                 alerts.push(Alert {
                     id: "alert.disk_full",
-                    urgency: if used >= 95.0 {
+                    urgency: if used >= thresholds::disk::CRITICAL_PCT {
                         Severity::Critical
                     } else {
                         Severity::High
@@ -42,10 +43,10 @@ pub fn evaluate(snapshot: &Snapshot) -> Vec<Alert> {
 
     if let Some(thermal) = &snapshot.thermal {
         if let Some(hottest) = thermal.hottest() {
-            if hottest.temp_c >= 85.0 {
+            if hottest.temp_c >= thresholds::thermal::HIGH_C {
                 alerts.push(Alert {
                     id: "alert.overheating",
-                    urgency: if hottest.temp_c >= 95.0 {
+                    urgency: if hottest.temp_c >= thresholds::thermal::CRITICAL_C {
                         Severity::Critical
                     } else {
                         Severity::High
@@ -59,7 +60,7 @@ pub fn evaluate(snapshot: &Snapshot) -> Vec<Alert> {
 
     if let Some(mem) = &snapshot.memory {
         let avail = mem.available_percent();
-        if avail < 10.0 {
+        if avail < thresholds::memory::LOW_PCT {
             alerts.push(Alert {
                 id: "alert.low_memory",
                 urgency: Severity::High,

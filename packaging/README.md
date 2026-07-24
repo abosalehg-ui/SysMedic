@@ -8,7 +8,7 @@ release compile of the workspace.
 | Debian/Ubuntu `.deb` | [`deb/build-deb.sh`](deb/build-deb.sh) | `dpkg-deb` | ✅ builds & verified in CI |
 | Flatpak | [`flatpak/io.github.abosalehg_ui.SysMedic.yaml`](flatpak/io.github.abosalehg_ui.SysMedic.yaml) | `flatpak-builder`, GNOME SDK | manifest ready; Flathub submission is manual |
 | AppImage | [`appimage/build-appimage.sh`](appimage/build-appimage.sh) | `appimagetool` (GTK plugin for full GUI bundling) | script ready |
-| Snap | [`snap/snapcraft.yaml`](snap/snapcraft.yaml) | `snapcraft` | manifest ready |
+| Snap | [`snap/snapcraft.yaml`](snap/snapcraft.yaml) | `snapcraft` | strict-confinement manifest; not yet built/verified |
 
 ## `.deb` (recommended for Ubuntu/Debian)
 
@@ -59,14 +59,27 @@ so the GTK4/libadwaita runtime is bundled.
 
 ```bash
 cd packaging/snap && snapcraft
-sudo snap install ./sysmedic_*.snap --classic --dangerous
+sudo snap install ./sysmedic_*.snap --dangerous
 ```
 
-`classic` confinement is used because a system doctor needs broad read access
-to diagnose the host.
+The manifest uses **strict** confinement with the `gnome` extension (which
+provides the GTK4/libadwaita runtime) and the `system-observe` /
+`hardware-observe` / `mount-observe` / `log-observe` / `network-observe`
+interfaces for diagnostics. Snapcraft rejects extensions under `classic`
+confinement, so classic is not an option while the GUI needs the gnome
+extension. Some deep diagnostics that need unmediated host access are best run
+from the `.deb`.
 
 ## Note on privileged fixes
 
-Every format installs `sysmedic-fix-helper` and the polkit policy. Fixes are
-authorized per-action through polkit; the GUI/CLI never run as root. Under
-Flatpak the helper talks to the host polkit over D-Bus.
+The **`.deb`** installs `sysmedic-fix-helper` to `/usr/libexec` and the polkit
+policy to `/usr/share/polkit-1/actions`, so Auto-Fix works: fixes are
+authorized per-action through polkit and the GUI/CLI never run as root.
+
+Under **Flatpak, Snap, and AppImage** the polkit action's `exec.path` points at
+the host path `/usr/libexec/sysmedic-fix-helper`, which those sandboxed/bundled
+formats do not install on the host — so **Auto-Fix currently requires the
+`.deb`**. Making fixes work from a sandbox needs a host-side privileged service
+(e.g. a systemd system service activated over D-Bus) that the sandboxed app
+calls; that is not yet implemented. Diagnostics (the read-only checkup) work in
+every format.

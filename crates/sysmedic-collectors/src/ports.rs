@@ -73,18 +73,30 @@ fn decode_v4(hex: &str) -> (String, bool) {
     (format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3]), loopback)
 }
 
-/// Decode a 32-hex-char IPv6 address → (string, is_loopback). We only need to
-/// distinguish loopback (::1) and wildcard (::) from routable addresses.
+/// Decode a 32-hex-char IPv6 address from `/proc/net/tcp6` → (string,
+/// is_loopback). The address is four little-endian 32-bit words; we rebuild the
+/// 16 bytes and classify with [`std::net::Ipv6Addr`], so `::1` and an
+/// IPv4-mapped loopback (`::ffff:127.0.0.1`) are both correctly treated as
+/// non-exposed, and routable addresses print properly instead of `[ipv6]`.
 fn decode_v6(hex: &str) -> (String, bool) {
-    let all_zero = hex.chars().all(|c| c == '0');
-    if all_zero {
-        return ("::".to_string(), false); // wildcard — exposed
+    if hex.len() != 32 {
+        return (hex.to_string(), false);
     }
-    // ::1 loopback, stored with the low byte set in the last little-endian word.
-    if hex.eq_ignore_ascii_case("00000000000000000000000001000000") {
-        return ("::1".to_string(), true);
+    let mut bytes = [0u8; 16];
+    for word in 0..4 {
+        let Ok(w) = u32::from_str_radix(&hex[word * 8..word * 8 + 8], 16) else {
+            return (hex.to_string(), false);
+        };
+        // Same little-endian convention as decode_v4.
+        bytes[word * 4..word * 4 + 4].copy_from_slice(&w.to_le_bytes());
     }
-    ("[ipv6]".to_string(), false)
+    let addr = std::net::Ipv6Addr::from(bytes);
+    let loopback = addr.is_loopback()
+        || addr
+            .to_ipv4_mapped()
+            .map(|v4| v4.is_loopback())
+            .unwrap_or(false);
+    (addr.to_string(), loopback)
 }
 
 #[cfg(test)]
@@ -127,5 +139,16 @@ mod tests {
         let local = ports.iter().find(|p| p.port == 631).unwrap();
         assert_eq!(local.address, "::1");
         assert!(!local.exposed);
+    }
+
+    #[test]
+    fn v4_mapped_loopback_is_not_exposed() {
+        // ::ffff:127.0.0.1 — stored as words 0,0,ffff (LE), 127.0.0.1 (LE).
+        // Word 2 = 0x0000FFFF byte-reversed is ffff at bytes 10..12; word 3 is
+        // 127.0.0.1. This used to be classified as exposed — a false positive.
+        let v6 = "  sl  local_address\n   0: 0000000000000000FFFF00000100007F:0050 00000000000000000000000000000000:0000 0A x\n";
+        let ports = parse_proc_net_tcp(v6, "tcp6", true);
+        let p = ports.iter().find(|p| p.port == 80).unwrap();
+        assert!(!p.exposed, "v4-mapped loopback must not be exposed");
     }
 }

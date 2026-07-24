@@ -45,9 +45,11 @@ fn run_engine() -> HealthReport {
         .with_collectors(sysmedic_collectors::default_collectors())
         .with_diagnostics(sysmedic_diagnostics::default_diagnostics())
         .run();
-    // Record this checkup so the trend strip has data (best-effort).
+    // Record this checkup so the trend strip has data (best-effort). Throttled
+    // so rapid refresh clicks don't flood history and turn the trend into a
+    // click-rate graph; scheduled `monitor` runs are far enough apart to record.
     let entry = sysmedic_history::HistoryEntry::from_report(&report);
-    let _ = sysmedic_history::append(sysmedic_history::default_path(), &entry);
+    let _ = sysmedic_history::append_throttled(sysmedic_history::default_path(), &entry, 300);
     report
 }
 
@@ -93,7 +95,11 @@ pub fn build_window(app: &adw::Application) {
         .add_titled(&scrolled, Some("overview"), strings.overview)
         .set_icon_name(Some("emblem-ok-symbolic"));
     stack
-        .add_titled(&crate::disk::disk_page(), Some("disk"), strings.disk_usage)
+        .add_titled(
+            &crate::disk::disk_page(lang),
+            Some("disk"),
+            strings.disk_usage,
+        )
         .set_icon_name(Some("drive-harddisk-symbolic"));
 
     let switcher = adw::ViewSwitcher::builder()
@@ -218,17 +224,21 @@ fn confirm_and_apply(
 
     let fix_id = plan.id.clone();
     let window = window.clone();
+    // A separate handle for the response callback, so `window` above stays
+    // available for `dialog.present` at the end of this function.
+    let cb_window = window.clone();
     dialog.connect_response(None, move |_, response| {
         if response != "apply" {
             return;
         }
         let fix_id = fix_id.clone();
         let on_changed = on_changed.clone();
+        let window = cb_window.clone();
         glib::spawn_future_local(async move {
             let helper = helper_path();
             let id = fix_id.clone();
             // pkexec prompts polkit; the helper does the privileged work.
-            let _succeeded = gtk::gio::spawn_blocking(move || {
+            let succeeded = gtk::gio::spawn_blocking(move || {
                 Command::new("pkexec")
                     .arg(helper)
                     .arg("apply")
@@ -237,7 +247,18 @@ fn confirm_and_apply(
                     .map(|s| s.success())
                     .unwrap_or(false)
             })
-            .await;
+            .await
+            .unwrap_or(false);
+            if !succeeded {
+                // Tell the user why nothing changed instead of a silent re-scan
+                // (auth cancelled, fix failed, or the helper isn't installed).
+                let error = adw::AlertDialog::new(
+                    Some(strings.fix_failed_title),
+                    Some(strings.fix_failed_body),
+                );
+                error.add_response("ok", strings.ok);
+                error.present(Some(&window));
+            }
             on_changed(); // re-scan so the UI reflects the new state
         });
     });

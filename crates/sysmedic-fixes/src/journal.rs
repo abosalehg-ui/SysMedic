@@ -2,6 +2,8 @@
 //! powers `undo`. Stored as JSON at a path the caller chooses
 //! (`/var/lib/sysmedic/journal.json` for the privileged helper).
 
+use std::io::Write as _;
+use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -70,13 +72,37 @@ impl Journal {
     }
 
     fn save(&self) -> Result<(), String> {
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
-        }
+        let dir = self.path.parent().unwrap_or_else(|| Path::new("."));
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+        // Lock the state directory down to its owner. For the privileged
+        // helper this is `/var/lib/sysmedic`, owned by root — so an
+        // unprivileged user cannot plant or rewrite `journal.json`, whose
+        // contents drive `undo` as root. Best-effort on exotic filesystems.
+        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+
         let json = serde_json::to_string_pretty(&self.entries).expect("entries serialize");
-        std::fs::write(&self.path, json)
-            .map_err(|e| format!("cannot write {}: {e}", self.path.display()))
+
+        // Write to a sibling temp file with 0600 and O_NOFOLLOW, then rename
+        // into place. The rename is atomic (readers never see a half-written
+        // journal) and O_NOFOLLOW refuses a pre-planted symlink at the temp
+        // path, closing the TOCTOU/symlink-overwrite window.
+        let tmp = dir.join(format!(".journal.{}.tmp", std::process::id()));
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&tmp)
+            .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+        file.write_all(json.as_bytes())
+            .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+        drop(file);
+        std::fs::rename(&tmp, &self.path).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            format!("cannot finalize {}: {e}", self.path.display())
+        })
     }
 }
 

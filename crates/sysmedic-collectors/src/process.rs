@@ -1,11 +1,28 @@
 use std::fs;
+use std::sync::OnceLock;
 
 use sysmedic_core::snapshot::{ProcessStats, ProcessTop};
 use sysmedic_core::{Collector, Snapshot};
 
 use crate::util;
 
-const PAGE_SIZE_KB: u64 = 4; // 4096-byte pages, the norm on Linux x86/arm64
+/// The kernel page size in kB, read once at runtime. `/proc/<pid>/statm` is in
+/// pages, and the page size is not always 4 KiB: RHEL/CentOS aarch64 use 64
+/// KiB pages and Apple-Silicon/Asahi kernels use 16 KiB, on which a hardcoded
+/// 4 would under-report RSS by 4×–16×.
+fn page_size_kb() -> u64 {
+    static PAGE_KB: OnceLock<u64> = OnceLock::new();
+    *PAGE_KB.get_or_init(|| {
+        // SAFETY: `sysconf(_SC_PAGESIZE)` has no preconditions and no
+        // observable side effects; it returns the page size in bytes.
+        let bytes = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        if bytes > 0 {
+            bytes as u64 / 1024
+        } else {
+            4 // implausible return; fall back to the common default
+        }
+    })
+}
 
 pub struct ProcessCollector;
 
@@ -39,8 +56,8 @@ impl Collector for ProcessCollector {
                     zombies.push(format!("{pid} {comm}"));
                 }
             }
-            if let Some(rss_kb) =
-                util::read_file(dir.join("statm")).and_then(|s| parse_statm_rss_kb(&s))
+            if let Some(rss_kb) = util::read_file(dir.join("statm"))
+                .and_then(|s| parse_statm_rss_kb(&s, page_size_kb()))
             {
                 procs.push(ProcessTop {
                     pid,
@@ -66,10 +83,11 @@ pub fn parse_stat_state(stat: &str) -> Option<char> {
     stat[close + 1..].split_whitespace().next()?.chars().next()
 }
 
-/// Resident set size in kB from `/proc/<pid>/statm` (second field, pages).
-pub fn parse_statm_rss_kb(statm: &str) -> Option<u64> {
+/// Resident set size in kB from `/proc/<pid>/statm` (second field, in pages),
+/// given the system `page_size_kb`.
+pub fn parse_statm_rss_kb(statm: &str, page_size_kb: u64) -> Option<u64> {
     let pages: u64 = statm.split_whitespace().nth(1)?.parse().ok()?;
-    Some(pages * PAGE_SIZE_KB)
+    Some(pages * page_size_kb)
 }
 
 #[cfg(test)]
@@ -84,6 +102,19 @@ mod tests {
 
     #[test]
     fn parses_statm_rss() {
-        assert_eq!(parse_statm_rss_kb("2500 1250 300 50 0 400 0"), Some(5000));
+        // 1250 pages × 4 KiB = 5000 kB.
+        assert_eq!(
+            parse_statm_rss_kb("2500 1250 300 50 0 400 0", 4),
+            Some(5000)
+        );
+    }
+
+    #[test]
+    fn statm_rss_scales_with_page_size() {
+        // Same 1250 pages on a 16 KiB-page kernel is 4× the RSS.
+        assert_eq!(
+            parse_statm_rss_kb("2500 1250 300 50 0 400 0", 16),
+            Some(20000)
+        );
     }
 }

@@ -1114,6 +1114,7 @@ dependencies = [
 name = "sysmedic-collectors"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "serde_json",
  "sysmedic-core",
 ]
@@ -1207,6 +1208,7 @@ dependencies = [
  "serde_json",
  "sysmedic-core",
  "sysmedic-knowledge",
+ "tempfile",
 ]
 
 [[package]]

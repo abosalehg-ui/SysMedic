@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Keep GitHub Actions up to date. Together with pinning actions to commit
+  # SHAs, this is the sustainable defense against a compromised action release.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+
+  # Surface Cargo advisories (e.g. RUSTSEC) and keep the lockfile current.
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: deps

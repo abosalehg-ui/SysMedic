@@ -6,6 +6,7 @@ fn gb(bytes: u64) -> f64 {
 
 pub mod storage {
     use super::gb;
+    use sysmedic_core::thresholds::disk;
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
     pub fn disk_nearly_full(s: &Snapshot) -> Vec<Finding> {
@@ -14,9 +15,9 @@ pub mod storage {
             .iter()
             .filter_map(|d| {
                 let used = d.used_percent();
-                let severity = if used >= 95.0 {
+                let severity = if used >= disk::CRITICAL_PCT {
                     Severity::Critical
-                } else if used >= 85.0 {
+                } else if used >= disk::FINDING_PCT {
                     Severity::Medium
                 } else {
                     return None;
@@ -34,7 +35,10 @@ pub mod storage {
                             d.mount_point
                         ),
                     )
-                    .with_fix_hint("sudo apt clean && sudo journalctl --vacuum-size=200M"),
+                    // Distro-neutral: this rule fires on any system, so avoid
+                    // an apt-only hint. Clearing the package cache is offered
+                    // separately by a package-manager-specific fix.
+                    .with_fix_hint("sudo journalctl --vacuum-size=200M"),
                 )
             })
             .collect()
@@ -42,14 +46,15 @@ pub mod storage {
 }
 
 pub mod memory {
+    use sysmedic_core::thresholds::memory as mem_th;
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
     pub fn low_available(s: &Snapshot) -> Vec<Finding> {
         let Some(mem) = &s.memory else { return vec![] };
         let avail = mem.available_percent();
-        let severity = if avail < 5.0 {
+        let severity = if avail < mem_th::CRITICAL_PCT {
             Severity::Critical
-        } else if avail < 10.0 {
+        } else if avail < mem_th::LOW_PCT {
             Severity::High
         } else {
             return vec![];
@@ -115,6 +120,7 @@ pub mod cpu {
 }
 
 pub mod thermal {
+    use sysmedic_core::thresholds::thermal as thermal_th;
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
     pub fn overheating(s: &Snapshot) -> Vec<Finding> {
@@ -124,9 +130,9 @@ pub mod thermal {
         let Some(hottest) = thermal.hottest() else {
             return vec![];
         };
-        let severity = if hottest.temp_c >= 95.0 {
+        let severity = if hottest.temp_c >= thermal_th::CRITICAL_C {
             Severity::Critical
-        } else if hottest.temp_c >= 85.0 {
+        } else if hottest.temp_c >= thermal_th::HIGH_C {
             Severity::High
         } else {
             return vec![];
