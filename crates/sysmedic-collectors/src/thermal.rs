@@ -15,12 +15,26 @@ impl Collector for ThermalCollector {
     fn collect(&self, snapshot: &mut Snapshot) {
         let mut sensors = read_thermal_zones();
         sensors.extend(read_hwmon());
+        // Drop implausible readings. Disconnected or bogus sensors on consumer
+        // boards commonly report -40, 0, or a stuck 127 °C; without this filter
+        // a single stuck sensor produces a false Critical overheating finding
+        // and a repeated desktop alert.
+        sensors.retain(|s| plausible(s.temp_c));
         if sensors.is_empty() {
             // Common in VMs/containers — not an error worth surfacing.
             return;
         }
         snapshot.thermal = Some(ThermalInfo { sensors });
     }
+}
+
+/// The range of temperatures (°C) treated as real sensor readings.
+const PLAUSIBLE_C: std::ops::RangeInclusive<f64> = 1.0..=120.0;
+
+/// Whether a reading looks like a genuine temperature rather than a
+/// disconnected/stuck sensor (-40, 0, 127 °C are the common bogus values).
+fn plausible(temp_c: f64) -> bool {
+    PLAUSIBLE_C.contains(&temp_c)
 }
 
 fn read_thermal_zones() -> Vec<ThermalSensor> {
@@ -69,4 +83,18 @@ fn read_hwmon() -> Vec<ThermalSensor> {
         }
     }
     sensors
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_stuck_and_disconnected_sensor_values() {
+        assert!(plausible(45.0));
+        assert!(plausible(95.0));
+        assert!(!plausible(127.0)); // stuck sensor
+        assert!(!plausible(0.0)); // disconnected
+        assert!(!plausible(-40.0)); // bogus
+    }
 }
