@@ -214,7 +214,13 @@ pub struct UreqTransport;
 
 impl HttpTransport for UreqTransport {
     fn post_json(&self, url: &str, headers: &[(&str, &str)], body: &str) -> Result<String, String> {
-        let mut req = ureq::post(url);
+        // Bound the call so `explain --deep` can't hang forever on a stalled
+        // connection (captive portal, a proxy black-holing api.anthropic.com).
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(60))
+            .build();
+        let mut req = agent.post(url);
         for (k, v) in headers {
             req = req.set(k, v);
         }

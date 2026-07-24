@@ -8,6 +8,7 @@
 pub mod treemap;
 
 use std::fs;
+use std::os::unix::fs::MetadataExt as _;
 use std::path::Path;
 
 use serde::Serialize;
@@ -33,10 +34,14 @@ pub fn scan(root: impl AsRef<Path>, max_depth: u32) -> Node {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| root.to_string_lossy().into_owned());
-    scan_inner(root, &name, max_depth)
+    // The device id of the starting filesystem. The walk stays on it, like
+    // `du -x`, so a scan of `/` doesn't wander into `/proc` (where `/proc/kcore`
+    // alone reports ~128 TiB), `/sys`, `/dev`, or other mounted disks.
+    let root_dev = fs::metadata(root).map(|m| m.dev()).ok();
+    scan_inner(root, &name, max_depth, root_dev)
 }
 
-fn scan_inner(path: &Path, name: &str, depth_left: u32) -> Node {
+fn scan_inner(path: &Path, name: &str, depth_left: u32, root_dev: Option<u64>) -> Node {
     let Ok(meta) = fs::symlink_metadata(path) else {
         return Node {
             name: name.to_string(),
@@ -45,6 +50,18 @@ fn scan_inner(path: &Path, name: &str, depth_left: u32) -> Node {
             children: Vec::new(),
         };
     };
+
+    // A different device id means a separate mount — skip it and its subtree.
+    if let Some(dev) = root_dev {
+        if meta.dev() != dev {
+            return Node {
+                name: name.to_string(),
+                size: 0,
+                is_dir: meta.is_dir(),
+                children: Vec::new(),
+            };
+        }
+    }
 
     if !meta.is_dir() {
         return Node {
@@ -60,7 +77,12 @@ fn scan_inner(path: &Path, name: &str, depth_left: u32) -> Node {
     if let Ok(entries) = fs::read_dir(path) {
         for entry in entries.flatten() {
             let child_name = entry.file_name().to_string_lossy().into_owned();
-            let child = scan_inner(&entry.path(), &child_name, depth_left.saturating_sub(1));
+            let child = scan_inner(
+                &entry.path(),
+                &child_name,
+                depth_left.saturating_sub(1),
+                root_dev,
+            );
             total += child.size;
             if depth_left > 0 {
                 children.push(child);

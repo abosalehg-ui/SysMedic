@@ -85,46 +85,60 @@ fn which(program: &str) -> Option<()> {
 }
 
 pub fn to_markdown(report: &HealthReport, lang: Lang) -> String {
+    let l = labels(lang);
     let mut out = String::new();
-    let _ = writeln!(out, "# SysMedic Health Report\n");
-    let _ = writeln!(out, "*Generated: {}*\n", report.generated_at);
+    let _ = writeln!(out, "# {}\n", l.report_title);
     let _ = writeln!(
         out,
-        "## Health score: **{}/100** ({})\n",
-        report.score, report.grade
+        "*{}: {}*\n",
+        l.generated,
+        md_inline(&report.generated_at)
     );
-    let _ = writeln!(out, "| Category | Score |");
+    let _ = writeln!(
+        out,
+        "## {}: **{}/100** ({})\n",
+        l.score, report.score, report.grade
+    );
+    let _ = writeln!(out, "| {} | |", l.categories);
     let _ = writeln!(out, "|---|---|");
     for cs in &report.category_scores {
         let _ = writeln!(out, "| {} | {} |", cs.category.label(), cs.score);
     }
-    let _ = writeln!(out, "\n## Findings ({})\n", report.findings.len());
+    let _ = writeln!(out, "\n## {} ({})\n", l.findings, report.findings.len());
     if report.findings.is_empty() {
-        let _ = writeln!(out, "No problems found. The system looks healthy.");
+        let _ = writeln!(out, "{}", l.healthy);
     }
     for f in &report.findings {
         let _ = writeln!(
             out,
             "### [{}] {}\n",
             f.severity.label().to_uppercase(),
-            f.title
+            md_inline(&f.title)
         );
-        let _ = writeln!(out, "{}\n", f.summary);
+        let _ = writeln!(out, "{}\n", md_inline(&f.summary));
         if let Some(exp) = explain(&f.id, lang) {
-            let _ = writeln!(out, "- **Cause:** {}", exp.cause);
-            let _ = writeln!(out, "- **Dangerous?** {}", exp.dangerous);
-            let _ = writeln!(out, "- **Impact:** {}", exp.impact);
-            let _ = writeln!(out, "- **Remedy:** {}", exp.remedy);
-            let _ = writeln!(out, "- **If ignored:** {}", exp.risk_if_ignored);
+            let _ = writeln!(out, "- **{}:** {}", l.cause, md_inline(&exp.cause));
+            let _ = writeln!(out, "- **{}:** {}", l.dangerous, md_inline(&exp.dangerous));
+            let _ = writeln!(out, "- **{}:** {}", l.impact, md_inline(&exp.impact));
+            let _ = writeln!(out, "- **{}:** {}", l.remedy, md_inline(&exp.remedy));
+            let _ = writeln!(
+                out,
+                "- **{}:** {}",
+                l.if_ignored,
+                md_inline(&exp.risk_if_ignored)
+            );
         }
         if !f.evidence.is_empty() {
-            let _ = writeln!(out, "\nEvidence:\n");
+            let _ = writeln!(out, "\n{}:\n", l.evidence);
             for e in &f.evidence {
-                let _ = writeln!(out, "- `{e}`");
+                // Escaped plain text rather than an inline code span: a backtick
+                // in the evidence would otherwise break out of the span.
+                let _ = writeln!(out, "- {}", md_inline(e));
             }
         }
         if let Some(hint) = &f.fix_hint {
-            let _ = writeln!(out, "\nSuggested command: `{hint}`");
+            // fix hints are static, developer-authored strings (not user input).
+            let _ = writeln!(out, "\n{}: `{hint}`", l.suggested);
         }
         let _ = writeln!(out);
     }
@@ -132,19 +146,25 @@ pub fn to_markdown(report: &HealthReport, lang: Lang) -> String {
 }
 
 pub fn to_html(report: &HealthReport, lang: Lang) -> String {
+    let l = labels(lang);
     let dir = if lang == Lang::Ar { "rtl" } else { "ltr" };
     let mut findings_html = String::new();
     for f in &report.findings {
         let explanation = explain(&f.id, lang)
             .map(|exp| {
                 format!(
-                    "<ul><li><b>Cause:</b> {}</li><li><b>Dangerous?</b> {}</li>\
-                     <li><b>Impact:</b> {}</li><li><b>Remedy:</b> {}</li>\
-                     <li><b>If ignored:</b> {}</li></ul>",
+                    "<ul><li><b>{}:</b> {}</li><li><b>{}:</b> {}</li>\
+                     <li><b>{}:</b> {}</li><li><b>{}:</b> {}</li>\
+                     <li><b>{}:</b> {}</li></ul>",
+                    esc(l.cause),
                     esc(&exp.cause),
+                    esc(l.dangerous),
                     esc(&exp.dangerous),
+                    esc(l.impact),
                     esc(&exp.impact),
+                    esc(l.remedy),
                     esc(&exp.remedy),
+                    esc(l.if_ignored),
                     esc(&exp.risk_if_ignored)
                 )
             })
@@ -177,7 +197,7 @@ pub fn to_html(report: &HealthReport, lang: Lang) -> String {
         .collect();
     format!(
         r#"<!DOCTYPE html>
-<html dir="{dir}"><head><meta charset="utf-8"><title>SysMedic Report</title><style>
+<html dir="{dir}"><head><meta charset="utf-8"><title>{report_title}</title><style>
 :root {{ color-scheme: light dark; font-family: system-ui, sans-serif; }}
 body {{ max-width: 860px; margin: 2rem auto; padding: 0 1rem; }}
 .score {{ font-size: 3rem; font-weight: 700; }}
@@ -191,13 +211,17 @@ article {{ border: 1px solid rgba(128,128,128,.35); border-radius: 10px; padding
 .sev-medium .badge {{ background: #e5a50a; }}
 pre {{ overflow-x: auto; background: rgba(128,128,128,.15); padding: .6rem; border-radius: 8px; }}
 </style></head><body>
-<h1>SysMedic Health Report</h1>
-<p><i>Generated: {generated}</i></p>
+<h1>{report_title}</h1>
+<p><i>{generated_label}: {generated}</i></p>
 <div class="score">{score}/100 <small>({grade})</small></div>
-<h2>Categories</h2>{categories}
-<h2>Findings ({count})</h2>{findings}
+<h2>{categories_label}</h2>{categories}
+<h2>{findings_label} ({count})</h2>{findings}
 </body></html>"#,
+        report_title = esc(l.report_title),
+        generated_label = esc(l.generated),
         generated = esc(&report.generated_at),
+        categories_label = esc(l.categories),
+        findings_label = esc(l.findings),
         score = report.score,
         grade = report.grade,
         count = report.findings.len(),
@@ -205,10 +229,88 @@ pre {{ overflow-x: auto; background: rgba(128,128,128,.15); padding: .6rem; bord
     )
 }
 
+/// Escape a string for HTML. Covers element *and* attribute context (quotes
+/// included) so a future move of an escaped value into an attribute can't
+/// become an injection point.
 fn esc(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+/// Escape text for Markdown body/inline context. Finding titles, summaries and
+/// evidence contain attacker-influenceable process/file/service names, and
+/// Markdown reports are pasted into GitHub issues/wikis where raw inline HTML
+/// and Markdown metacharacters are rendered. Backslash-escaping the
+/// significant characters makes the content render literally.
+fn md_inline(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        if matches!(
+            c,
+            '\\' | '`' | '*' | '_' | '{' | '}' | '[' | ']' | '<' | '>' | '#' | '|'
+        ) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Localized labels for the report chrome (headings, field names). The finding
+/// *bodies* are already localized via the knowledge base; this localizes the
+/// surrounding structure so an Arabic report is not half English.
+struct Labels {
+    report_title: &'static str,
+    generated: &'static str,
+    score: &'static str,
+    categories: &'static str,
+    findings: &'static str,
+    healthy: &'static str,
+    cause: &'static str,
+    dangerous: &'static str,
+    impact: &'static str,
+    remedy: &'static str,
+    if_ignored: &'static str,
+    evidence: &'static str,
+    suggested: &'static str,
+}
+
+fn labels(lang: Lang) -> Labels {
+    match lang {
+        Lang::Ar => Labels {
+            report_title: "تقرير صحّة SysMedic",
+            generated: "أُنشئ في",
+            score: "درجة الصحّة",
+            categories: "الفئات",
+            findings: "النتائج",
+            healthy: "لا توجد مشكلات — النظام يبدو سليماً.",
+            cause: "السبب",
+            dangerous: "هل هو خطير؟",
+            impact: "التأثير",
+            remedy: "العلاج",
+            if_ignored: "إذا أُهمل",
+            evidence: "الدليل",
+            suggested: "أمر مقترح",
+        },
+        Lang::En => Labels {
+            report_title: "SysMedic Health Report",
+            generated: "Generated",
+            score: "Health score",
+            categories: "Categories",
+            findings: "Findings",
+            healthy: "No problems found. The system looks healthy.",
+            cause: "Cause",
+            dangerous: "Dangerous?",
+            impact: "Impact",
+            remedy: "Remedy",
+            if_ignored: "If ignored",
+            evidence: "Evidence",
+            suggested: "Suggested command",
+        },
+    }
 }
 
 #[cfg(test)]
@@ -244,9 +346,52 @@ mod tests {
     }
 
     #[test]
-    fn html_is_escaped_and_rtl_aware() {
+    fn html_is_rtl_aware_and_localizes_chrome() {
         let html = to_html(&report(), Lang::Ar);
         assert!(html.contains("dir=\"rtl\""));
-        assert!(html.contains("SysMedic Health Report"));
+        // The report chrome is Arabic, not half-English.
+        assert!(html.contains("تقرير صحّة SysMedic"));
+        assert!(html.contains("النتائج"));
+    }
+
+    #[test]
+    fn markdown_localizes_chrome_in_arabic() {
+        let md = to_markdown(&report(), Lang::Ar);
+        assert!(md.contains("درجة الصحّة"));
+        assert!(md.contains("## النتائج"));
+    }
+
+    #[test]
+    fn html_escapes_injection_in_findings() {
+        let report = HealthReport::build(
+            Snapshot::default(),
+            vec![Finding::new(
+                "storage.disk_nearly_full",
+                Category::Storage,
+                Severity::Critical,
+                "<script>alert(1)</script>\" evil",
+                "summary",
+            )],
+        );
+        let html = to_html(&report, Lang::En);
+        assert!(!html.contains("<script>alert(1)</script>"));
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(html.contains("&quot;"));
+    }
+
+    #[test]
+    fn markdown_escapes_injection_in_title_and_evidence() {
+        let f = Finding::new(
+            "storage.disk_nearly_full",
+            Category::Storage,
+            Severity::Critical,
+            "# Not a heading <b>",
+            "s",
+        )
+        .with_evidence(vec!["`rm -rf` <script>".into()]);
+        let report = HealthReport::build(Snapshot::default(), vec![f]);
+        let md = to_markdown(&report, Lang::En);
+        assert!(md.contains("\\# Not a heading \\<b\\>"));
+        assert!(md.contains("\\`rm -rf\\`"));
     }
 }
