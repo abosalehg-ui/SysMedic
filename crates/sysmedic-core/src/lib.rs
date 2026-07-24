@@ -11,6 +11,7 @@ pub mod finding;
 pub mod fix;
 pub mod score;
 pub mod snapshot;
+pub mod thresholds;
 
 pub use engine::{Collector, Diagnostic, Engine};
 pub use finding::{Category, Finding, Severity};

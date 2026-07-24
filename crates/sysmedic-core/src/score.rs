@@ -2,8 +2,14 @@ use std::time::SystemTime;
 
 use serde::Serialize;
 
-use crate::finding::{Category, Finding};
+use crate::finding::{Category, Finding, Severity};
 use crate::snapshot::Snapshot;
+
+/// Highest overall score allowed when any Critical finding is present (top of
+/// the "Poor" band).
+const CRITICAL_SCORE_CAP: u8 = 59;
+/// Highest overall score allowed when the worst finding is High (top of "Fair").
+const HIGH_SCORE_CAP: u8 = 74;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CategoryScore {
@@ -45,7 +51,19 @@ impl HealthReport {
             .iter()
             .map(|cs| cs.score as u32 * cs.category.weight())
             .sum();
-        let score = (weighted as f64 / total_weight as f64).round() as u8;
+        let raw = (weighted as f64 / total_weight as f64).round() as u8;
+
+        // Cap the overall score by the most severe finding present. Without
+        // this, a single Critical (e.g. a SMART-failing disk) is diluted across
+        // twelve weighted categories and the machine still grades "Excellent" —
+        // dangerously reassuring. A Critical caps the grade at "Poor", a High at
+        // "Fair", so the headline can never contradict a serious finding.
+        let worst = findings.iter().map(|f| f.severity).max();
+        let score = match worst {
+            Some(Severity::Critical) => raw.min(CRITICAL_SCORE_CAP),
+            Some(Severity::High) => raw.min(HIGH_SCORE_CAP),
+            _ => raw,
+        };
 
         HealthReport {
             generated_at: humantime::format_rfc3339_seconds(SystemTime::now()).to_string(),
@@ -97,6 +115,37 @@ mod tests {
             .find(|cs| cs.category == Category::Storage)
             .unwrap();
         assert_eq!(storage.score, 60);
+    }
+
+    #[test]
+    fn critical_finding_caps_grade_below_excellent() {
+        // One Critical, every other category perfect: must not grade Excellent.
+        let report = HealthReport::build(
+            Snapshot::default(),
+            vec![finding(Category::Storage, Severity::Critical)],
+        );
+        assert!(report.score <= 59, "score {} was not capped", report.score);
+        assert_eq!(report.grade, grade_for(report.score));
+        assert_ne!(report.grade, "Excellent");
+    }
+
+    #[test]
+    fn high_finding_caps_grade_at_fair() {
+        let report = HealthReport::build(
+            Snapshot::default(),
+            vec![finding(Category::Cpu, Severity::High)],
+        );
+        assert!(report.score <= 74, "score {} was not capped", report.score);
+    }
+
+    #[test]
+    fn low_findings_do_not_cap() {
+        // A couple of Low findings should still leave a healthy overall grade.
+        let report = HealthReport::build(
+            Snapshot::default(),
+            vec![finding(Category::Logs, Severity::Low)],
+        );
+        assert!(report.score >= 90);
     }
 
     #[test]
