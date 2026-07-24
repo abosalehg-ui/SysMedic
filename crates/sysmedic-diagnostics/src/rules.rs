@@ -35,7 +35,10 @@ pub mod storage {
                             d.mount_point
                         ),
                     )
-                    .with_fix_hint("sudo apt clean && sudo journalctl --vacuum-size=200M"),
+                    // Distro-neutral: this rule fires on any system, so avoid
+                    // an apt-only hint. Clearing the package cache is offered
+                    // separately by a package-manager-specific fix.
+                    .with_fix_hint("sudo journalctl --vacuum-size=200M"),
                 )
             })
             .collect()
