@@ -1207,6 +1207,7 @@ dependencies = [
  "serde_json",
  "sysmedic-core",
  "sysmedic-knowledge",
+ "tempfile",
 ]
 
 [[package]]

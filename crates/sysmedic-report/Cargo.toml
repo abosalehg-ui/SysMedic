@@ -10,3 +10,4 @@ repository.workspace = true
 sysmedic-core = { workspace = true }
 sysmedic-knowledge = { workspace = true }
 serde_json = { workspace = true }
+tempfile = "3"

@@ -34,9 +34,24 @@ const PDF_TOOLS: &[(&str, &[&str])] = &[
 /// HTML.
 pub fn write_pdf(report: &HealthReport, lang: Lang, out_path: &Path) -> Result<(), String> {
     let html = to_html(report, lang);
-    let tmp = std::env::temp_dir().join("sysmedic-report.html");
-    std::fs::write(&tmp, html).map_err(|e| format!("cannot write temp HTML: {e}"))?;
-    let (tmp_s, out_s) = (tmp.to_string_lossy(), out_path.to_string_lossy());
+    // A private, uniquely-named temp file (O_EXCL, mode 0600) that auto-deletes
+    // when dropped at the end of this function. This avoids the fixed,
+    // predictable, world-readable path in the shared temp dir, which was open
+    // to a symlink-overwrite attack and leaked the full report to other local
+    // users. The handle is kept alive across the conversion below.
+    let mut tmp = tempfile::Builder::new()
+        .prefix("sysmedic-report-")
+        .suffix(".html")
+        .tempfile()
+        .map_err(|e| format!("cannot create temp HTML: {e}"))?;
+    {
+        use std::io::Write as _;
+        tmp.write_all(html.as_bytes())
+            .and_then(|()| tmp.flush())
+            .map_err(|e| format!("cannot write temp HTML: {e}"))?;
+    }
+    let tmp_path = tmp.path().to_path_buf();
+    let (tmp_s, out_s) = (tmp_path.to_string_lossy(), out_path.to_string_lossy());
 
     for (tool, template) in PDF_TOOLS {
         if which(tool).is_none() {

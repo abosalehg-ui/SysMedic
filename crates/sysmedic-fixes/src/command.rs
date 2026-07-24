@@ -12,10 +12,17 @@ pub trait CommandRunner: Send + Sync {
 /// Executes commands for real (no shell — program + args directly).
 pub struct RealRunner;
 
+/// A minimal, known-good `PATH` for the privileged helper. Fix commands are
+/// resolved here rather than through the inherited `PATH`, so a poisoned
+/// `PATH` cannot substitute an attacker-controlled binary for `apt-get`,
+/// `ufw`, etc. when they run as root.
+const SAFE_PATH: &str = "/usr/sbin:/usr/bin:/sbin:/bin";
+
 impl CommandRunner for RealRunner {
     fn run(&self, command: &FixCommand) -> Result<String, String> {
         let output = Command::new(&command.program)
             .args(&command.args)
+            .env("PATH", SAFE_PATH)
             .output()
             .map_err(|e| format!("failed to launch `{}`: {e}", command.program))?;
         let stdout = String::from_utf8_lossy(&output.stdout);
