@@ -68,6 +68,47 @@ pub fn append(path: impl AsRef<Path>, entry: &HistoryEntry) -> Result<(), String
     writeln!(file, "{line}").map_err(|e| format!("cannot write history: {e}"))
 }
 
+/// Whether a new entry timestamped `new_at` should be recorded, given the most
+/// recent existing timestamp `last_at` and a minimum gap. Stops rapid GUI
+/// refreshes from flooding history so the trend reflects health over time, not
+/// how often the user clicked refresh. Unparseable timestamps never block a
+/// record.
+pub fn should_record(last_at: Option<&str>, new_at: &str, min_gap_secs: u64) -> bool {
+    let Some(last) = last_at else {
+        return true;
+    };
+    match (
+        humantime::parse_rfc3339(last),
+        humantime::parse_rfc3339(new_at),
+    ) {
+        (Ok(l), Ok(n)) => n
+            .duration_since(l)
+            .map(|d| d.as_secs() >= min_gap_secs)
+            .unwrap_or(true),
+        _ => true,
+    }
+}
+
+/// Append `entry` unless the most recent record is newer than `min_gap_secs`.
+/// Returns whether it was written.
+pub fn append_throttled(
+    path: impl AsRef<Path>,
+    entry: &HistoryEntry,
+    min_gap_secs: u64,
+) -> Result<bool, String> {
+    let path = path.as_ref();
+    let last = load(path).pop();
+    if !should_record(
+        last.as_ref().map(|e| e.at.as_str()),
+        &entry.at,
+        min_gap_secs,
+    ) {
+        return Ok(false);
+    }
+    append(path, entry)?;
+    Ok(true)
+}
+
 /// Load all recorded entries (skips malformed lines rather than failing).
 pub fn load(path: impl AsRef<Path>) -> Vec<HistoryEntry> {
     let Ok(text) = std::fs::read_to_string(path) else {
@@ -159,6 +200,39 @@ mod tests {
         assert_eq!(spark.chars().count(), 3);
         assert_eq!(spark.chars().next(), Some('▁'));
         assert_eq!(spark.chars().last(), Some('█'));
+    }
+
+    #[test]
+    fn should_record_respects_min_gap() {
+        assert!(should_record(None, "2026-07-24T10:00:00Z", 300));
+        // 4 minutes apart, min gap 5 minutes → skip.
+        assert!(!should_record(
+            Some("2026-07-24T10:00:00Z"),
+            "2026-07-24T10:04:00Z",
+            300
+        ));
+        // 6 minutes apart → record.
+        assert!(should_record(
+            Some("2026-07-24T10:00:00Z"),
+            "2026-07-24T10:06:00Z",
+            300
+        ));
+        // Unparseable last timestamp never blocks recording.
+        assert!(should_record(Some("garbage"), "2026-07-24T10:06:00Z", 300));
+    }
+
+    #[test]
+    fn append_throttled_skips_rapid_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.jsonl");
+        let mut a = HistoryEntry::from_report(&report_with(&[]));
+        a.at = "2026-07-24T10:00:00Z".into();
+        let mut b = a.clone();
+        b.at = "2026-07-24T10:01:00Z".into(); // 1 min later
+
+        assert_eq!(append_throttled(&path, &a, 300), Ok(true));
+        assert_eq!(append_throttled(&path, &b, 300), Ok(false));
+        assert_eq!(load(&path).len(), 1);
     }
 
     #[test]

@@ -6,25 +6,13 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use gtk::glib;
-use sysmedic_diskscan::{squarify, Node, Rect};
+use sysmedic_diskscan::{human_size, squarify, Node, Rect};
+use sysmedic_knowledge::Lang;
+
+use crate::viewmodel::Strings;
 
 /// How many top-level entries to show as treemap tiles.
 const MAX_TILES: usize = 60;
-
-pub fn human_size(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
-    let mut size = bytes as f64;
-    let mut unit = 0;
-    while size >= 1024.0 && unit < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit += 1;
-    }
-    if unit == 0 {
-        format!("{bytes} B")
-    } else {
-        format!("{size:.1} {}", UNITS[unit])
-    }
-}
 
 /// Deterministic pleasant-ish color per label (stable across redraws).
 fn color_for(label: &str) -> (f64, f64, f64) {
@@ -52,17 +40,18 @@ fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
     (r + m, g + m, b + m)
 }
 
-pub fn disk_page() -> gtk::Box {
+pub fn disk_page(lang: Lang) -> gtk::Box {
+    let strings = Strings::for_lang(lang);
     let root = gtk::Box::new(gtk::Orientation::Vertical, 8);
     root.set_margin_top(12);
     root.set_margin_bottom(12);
     root.set_margin_start(12);
     root.set_margin_end(12);
 
-    let heading = gtk::Label::new(Some("Disk usage"));
+    let heading = gtk::Label::new(Some(strings.disk_usage));
     heading.add_css_class("title-2");
     heading.set_xalign(0.0);
-    let subtitle = gtk::Label::new(Some("Scanning your home folder…"));
+    let subtitle = gtk::Label::new(Some(strings.disk_scanning));
     subtitle.add_css_class("dim-label");
     subtitle.set_xalign(0.0);
     root.append(&heading);
