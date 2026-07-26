@@ -35,6 +35,12 @@ pub mod storage {
                             d.mount_point
                         ),
                     )
+                    .with_args(vec![
+                        d.mount_point.clone(),
+                        format!("{used:.0}"),
+                        format!("{:.1}", gb(d.available_bytes)),
+                        format!("{:.1}", gb(d.total_bytes)),
+                    ])
                     // Distro-neutral: this rule fires on any system, so avoid
                     // an apt-only hint. Clearing the package cache is offered
                     // separately by a package-manager-specific fix.
@@ -69,7 +75,12 @@ pub mod memory {
                 mem.available_kb / 1024,
                 mem.total_kb / 1024
             ),
-        )]
+        )
+        .with_args(vec![
+            format!("{avail:.0}"),
+            (mem.available_kb / 1024).to_string(),
+            (mem.total_kb / 1024).to_string(),
+        ])]
     }
 
     pub fn swap_pressure(s: &Snapshot) -> Vec<Finding> {
@@ -86,7 +97,8 @@ pub mod memory {
                 format!(
                     "{swap_used:.0}% of swap in use while available RAM is low — the system will feel sluggish."
                 ),
-            )]
+            )
+            .with_args(vec![format!("{swap_used:.0}")])]
         } else {
             vec![]
         }
@@ -115,7 +127,11 @@ pub mod cpu {
                 "15-minute load average is {:.2} on {} cores.",
                 cpu.load_15, cpu.logical_cores
             ),
-        )]
+        )
+        .with_args(vec![
+            format!("{:.2}", cpu.load_15),
+            cpu.logical_cores.to_string(),
+        ])]
     }
 }
 
@@ -143,7 +159,11 @@ pub mod thermal {
             severity,
             format!("Sensor {} reads {:.0}°C", hottest.name, hottest.temp_c),
             "The system is running hot; sustained high temperatures throttle performance and shorten hardware life.",
-        )]
+        )
+        .with_args(vec![
+            hottest.name.clone(),
+            format!("{:.0}", hottest.temp_c),
+        ])]
     }
 }
 
@@ -169,7 +189,8 @@ pub mod processes {
             format!("{} zombie process(es) found", procs.zombies.len()),
             "Zombie processes are dead but their parent never collected their exit status.",
         )
-        .with_evidence(procs.zombies.clone())]
+        .with_evidence(procs.zombies.clone())
+        .with_args(vec![procs.zombies.len().to_string()])]
     }
 }
 
@@ -191,7 +212,8 @@ pub mod services {
             "Failed units mean something the system was asked to run is broken.",
         )
         .with_evidence(services.failed.clone())
-        .with_fix_hint("systemctl status <unit> && journalctl -u <unit> -b")]
+        .with_fix_hint("systemctl status <unit> && journalctl -u <unit> -b")
+        .with_args(vec![services.failed.len().to_string()])]
     }
 }
 
@@ -221,7 +243,8 @@ pub mod boot {
             "Startup is slower than it should be; the slowest units are listed in the evidence.",
         )
         .with_evidence(evidence)
-        .with_fix_hint("systemd-analyze blame")]
+        .with_fix_hint("systemd-analyze blame")
+        .with_args(vec![format!("{:.0}", boot.total_seconds)])]
     }
 }
 
@@ -245,7 +268,8 @@ pub mod packages {
             "The dpkg database reports packages in an inconsistent state.",
         )
         .with_evidence(pkgs.broken.clone())
-        .with_fix_hint("sudo apt --fix-broken install")]
+        .with_fix_hint("sudo apt --fix-broken install")
+        .with_args(vec![pkgs.broken.len().to_string()])]
     }
 
     pub fn old_kernels(s: &Snapshot) -> Vec<Finding> {
@@ -263,7 +287,8 @@ pub mod packages {
             "Old kernel images take space in /boot; keeping one fallback is enough.",
         )
         .with_evidence(pkgs.old_kernels.clone())
-        .with_fix_hint("sudo apt autoremove --purge")]
+        .with_fix_hint("sudo apt autoremove --purge")
+        .with_args(vec![pkgs.old_kernels.len().to_string()])]
     }
 
     pub fn apt_cache_large(s: &Snapshot) -> Vec<Finding> {
@@ -283,7 +308,8 @@ pub mod packages {
             format!("APT package cache holds {:.1} GiB", gb(bytes)),
             "Downloaded .deb files in /var/cache/apt/archives are safe to delete.",
         )
-        .with_fix_hint("sudo apt clean")]
+        .with_fix_hint("sudo apt clean")
+        .with_args(vec![format!("{:.1}", gb(bytes))])]
     }
 
     pub fn security_updates(s: &Snapshot) -> Vec<Finding> {
@@ -298,7 +324,8 @@ pub mod packages {
                 format!("{n} security update(s) pending"),
                 "Packages with known security fixes are waiting to be installed.",
             )
-            .with_fix_hint("sudo apt update && sudo apt upgrade")],
+            .with_fix_hint("sudo apt update && sudo apt upgrade")
+            .with_args(vec![n.to_string()])],
             _ => vec![],
         }
     }
@@ -315,7 +342,8 @@ pub mod packages {
                 format!("{n} package update(s) pending"),
                 "A large backlog of updates accumulates bugs already fixed upstream.",
             )
-            .with_fix_hint("sudo apt update && sudo apt upgrade")],
+            .with_fix_hint("sudo apt update && sudo apt upgrade")
+            .with_args(vec![n.to_string()])],
             _ => vec![],
         }
     }
@@ -345,7 +373,8 @@ pub mod logs {
             format!("systemd journal uses {:.1} GiB", gb(bytes)),
             "The journal grows unbounded unless a size limit is set.",
         )
-        .with_fix_hint("sudo journalctl --vacuum-size=200M")]
+        .with_fix_hint("sudo journalctl --vacuum-size=200M")
+        .with_args(vec![format!("{:.1}", gb(bytes))])]
     }
 
     pub fn large_files(s: &Snapshot) -> Vec<Finding> {
@@ -374,7 +403,8 @@ pub mod logs {
             ),
             "A log growing this large usually means a service is erroring in a loop.",
         )
-        .with_evidence(evidence)]
+        .with_evidence(evidence)
+        .with_args(vec![logs.large_files.len().to_string()])]
     }
 }
 
@@ -401,7 +431,8 @@ pub mod snap {
             ),
             format!("Snapd keeps old revisions of every snap after updates.{size_note}"),
         )
-        .with_fix_hint("sudo snap set system refresh.retain=2")]
+        .with_fix_hint("sudo snap set system refresh.retain=2")
+        .with_args(vec![snap.disabled_revisions.to_string()])]
     }
 }
 
@@ -426,7 +457,8 @@ pub mod flatpak {
             "Flatpak runtimes left behind by removed apps still occupy disk space.",
         )
         .with_evidence(flatpak.unused_refs.clone())
-        .with_fix_hint("flatpak uninstall --unused")]
+        .with_fix_hint("flatpak uninstall --unused")
+        .with_args(vec![flatpak.unused_refs.len().to_string()])]
     }
 }
 
@@ -454,7 +486,8 @@ pub mod battery {
             severity,
             format!("Battery holds only {health:.0}% of its design capacity"),
             "The battery has aged; runtime on a full charge is significantly reduced.",
-        )]
+        )
+        .with_args(vec![format!("{health:.0}")])]
     }
 }
 
@@ -561,8 +594,9 @@ pub mod security {
             format!("{} service(s) listening on the network", exposed.len()),
             "These ports accept connections from other machines. Make sure each is intended, and let the firewall cover the rest.",
         )
-        .with_evidence(exposed)
-        .with_fix_hint("review with `ss -tulnp`; enable ufw to gate access")]
+        .with_fix_hint("review with `ss -tulnp`; enable ufw to gate access")
+        .with_args(vec![exposed.len().to_string()])
+        .with_evidence(exposed)]
     }
 }
 
@@ -589,6 +623,7 @@ pub mod smart {
                     ),
                 )
                 .with_fix_hint("back up immediately and plan to replace the drive")
+                .with_args(vec![d.device.clone(), d.model.clone()])
             })
             .collect()
     }
@@ -617,7 +652,8 @@ pub mod smart {
                         format!("{} has {} reallocated sector(s)", d.device, count),
                         "The drive has remapped bad sectors. A rising count signals physical degradation.",
                     )
-                    .with_fix_hint("back up important data and monitor the count over time"),
+                    .with_fix_hint("back up important data and monitor the count over time")
+                    .with_args(vec![d.device.clone(), count.to_string()]),
                 )
             })
             .collect()
@@ -647,7 +683,8 @@ pub mod smart {
                         format!("SSD {} is {}% through its rated write life", d.device, wear),
                         "NVMe wear indicator is high; the drive is nearing the endurance it was rated for.",
                     )
-                    .with_fix_hint("ensure backups; plan replacement as it approaches 100%"),
+                    .with_fix_hint("ensure backups; plan replacement as it approaches 100%")
+                    .with_args(vec![d.device.clone(), wear.to_string()]),
                 )
             })
             .collect()

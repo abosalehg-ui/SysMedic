@@ -97,8 +97,10 @@ pub fn render(report: &HealthReport, lang: Lang) -> String {
             Severity::Medium => badge.yellow().bold().to_string(),
             _ => badge.dimmed().to_string(),
         };
-        let _ = writeln!(out, "  {badge} {}", sanitize(&f.title).bold());
-        let _ = writeln!(out, "      {}", sanitize(&f.summary));
+        let title = sysmedic_knowledge::localized_title(f, lang);
+        let summary = sysmedic_knowledge::localized_summary(f, lang);
+        let _ = writeln!(out, "  {badge} {}", sanitize(&title).bold());
+        let _ = writeln!(out, "      {}", sanitize(&summary));
         let _ = writeln!(out, "      {}", format!("id: {}", f.id).dimmed());
         if let Some(exp) = explain(&f.id, lang) {
             let _ = writeln!(out, "      {} {}", c.remedy.cyan(), exp.remedy);

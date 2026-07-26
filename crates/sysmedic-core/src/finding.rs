@@ -153,6 +153,13 @@ pub struct Finding {
     pub evidence: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fix_hint: Option<String>,
+    /// The dynamic values interpolated into `title`/`summary`, in the order
+    /// the rule produced them. Translated titles are rendered from per-id
+    /// templates in the knowledge base by substituting `{0}`, `{1}`, … with
+    /// these values — the message-catalog equivalent of gettext, without
+    /// coupling translation to the process locale.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
 }
 
 impl Finding {
@@ -171,11 +178,19 @@ impl Finding {
             summary: summary.into(),
             evidence: Vec::new(),
             fix_hint: None,
+            args: Vec::new(),
         }
     }
 
     pub fn with_evidence(mut self, evidence: Vec<String>) -> Self {
         self.evidence = evidence;
+        self
+    }
+
+    /// Attach the dynamic values used in `title`/`summary` so translations
+    /// can re-render them from templates (see the `args` field).
+    pub fn with_args(mut self, args: Vec<String>) -> Self {
+        self.args = args;
         self
     }
 

@@ -9,6 +9,8 @@
     remedy: "Clean the APT cache (sudo apt clean), vacuum the journal (sudo journalctl --vacuum-size=200M), remove old snaps and kernels, then use a disk analyzer to find large files."
     risk_if_ignored: "The disk will eventually reach 100% and the desktop can fail to start or lose data."
   ar:
+    title: "نظام الملفات {0} ممتلئ بنسبة {1}٪"
+    summary: "لم يتبق سوى {2} GiB من أصل {3} GiB على {0}."
     cause: "امتلأ نظام الملفات ببيانات متراكمة — حزم، ذاكرة تخزين مؤقتة، سجلات، حزم Snap أو ملفات المستخدم — أسرع مما يُنظَّف."
     dangerous: "نعم عند تجاوز 95%: كثير من البرامج، بما فيها تحديثات النظام، تفشل أو تُتلف البيانات عند امتلاء القرص."
     impact: "فشل التحديثات، انهيار التطبيقات عند الحفظ، وقد لا يقلع النظام بسلامة عند الامتلاء الكامل."
@@ -23,6 +25,8 @@
     remedy: "Close or restart the heaviest applications (see the top-memory list in the report). Consider adding RAM or enabling zram."
     risk_if_ignored: "The system will thrash or the kernel will kill processes, possibly losing unsaved work."
   ar:
+    title: "لم يتبق متاحاً سوى {0}٪ من الذاكرة"
+    summary: "{1} MiB متاحة من أصل {2} MiB."
     cause: "التطبيقات العاملة (غالبًا المتصفحات أو بيئات التطوير أو عمليات بها تسريب ذاكرة) تستهلك كل الذاكرة الفعلية تقريبًا."
     dangerous: "متوسطة الخطورة: سيبدأ النظام بالتبديل إلى Swap، وفي أسوأ الحالات يقتل OOM Killer تطبيقاتك."
     impact: "بطء شديد، تجمّد الواجهة، إنهاء تطبيقات دون تحذير."
@@ -37,6 +41,8 @@
     remedy: "Close memory-heavy applications; on SSD systems consider zram/zswap; add RAM if this is chronic."
     risk_if_ignored: "Persistent sluggishness and extra wear on SSDs from constant swapping."
   ar:
+    title: "النظام تحت ضغط ذاكرة ويستخدم Swap بكثافة"
+    summary: "{0}٪ من مساحة Swap مستخدمة والذاكرة المتاحة منخفضة — سيبدو النظام بطيئاً."
     cause: "نفدت الذاكرة الفعلية، فيدفع النظام صفحات الذاكرة إلى قسم Swap الأبطأ بكثير."
     dangerous: "ليست خطيرة فورًا، لكنها السبب الأول لإحساس «النظام صار بطيئًا فجأة»."
     impact: "تقطيع في التطبيقات وثوانٍ من الانتظار عند التبديل بين النوافذ."
@@ -51,6 +57,8 @@
     remedy: "Identify the offender with a process monitor (top/btop) and stop or reconfigure it."
     risk_if_ignored: "Continued heat, noise, energy drain and shortened hardware life."
   ar:
+    title: "حمل مرتفع مستمر على المعالج"
+    summary: "متوسط الحمل خلال 15 دقيقة هو {0} على {1} نواة."
     cause: "متوسط الحمل لآخر 15 دقيقة يتجاوز عدد أنوية المعالج — أعمال في الطابور أكثر مما يستطيع المعالج إنجازه."
     dangerous: "غالبًا لا، لكن الحمل المستمر قد يخفي عملية خارجة عن السيطرة أو معدّن عملات خبيث."
     impact: "بطء عام، ضجيج مراوح، واستنزاف سريع للبطارية."
@@ -65,6 +73,8 @@
     remedy: "Clean dust and vents, check that fans spin, avoid soft surfaces blocking airflow, renew thermal paste on old machines."
     risk_if_ignored: "Chronic throttling and a real risk of hardware damage or abrupt shutdowns."
   ar:
+    title: "المستشعر {0} يسجّل {1}°م"
+    summary: "النظام يعمل بحرارة مرتفعة؛ استمرار الحرارة العالية يخنق الأداء ويقصّر عمر العتاد."
     cause: "تهوية سيئة، غبار متراكم، معجون حراري متدهور، أو حمل عمل ثقيل مستمر."
     dangerous: "نعم فوق ~90°م باستمرار: يخفّض المعالج سرعته ويشيخ العتاد أسرع."
     impact: "هبوط مفاجئ في الأداء (خنق حراري)، ضجيج مراوح، واحتمال إطفاء طارئ."
@@ -79,6 +89,8 @@
     remedy: "Find the parent of the zombies and restart it; zombies cannot be killed directly."
     risk_if_ignored: "If the parent keeps leaking, zombie count grows until process creation fails."
   ar:
+    title: "عُثر على {0} من العمليات الزومبي"
+    summary: "العمليات الزومبي انتهت لكن العملية الأم لم تجمع حالة خروجها قط."
     cause: "عملية أب أنشأت عمليات فرعية ولم تقرأ حالة خروجها، فبقيت مدخلات «defunct» في جدول العمليات."
     dangerous: "العدد القليل غير مؤذٍ؛ المئات تعني أن العملية الأب معطوبة وقد تستنفد جدول العمليات."
     impact: "شكلي غالبًا بأعداد صغيرة؛ بأعداد كبيرة قد تفشل العمليات الجديدة في البدء."
@@ -93,6 +105,8 @@
     remedy: "Inspect it: systemctl status <unit> and journalctl -u <unit> -b, fix the cause, then systemctl restart <unit>."
     risk_if_ignored: "Silent loss of the function the unit provides, often noticed only when it is needed."
   ar:
+    title: "{0} من وحدات systemd في حالة فشل"
+    summary: "فشل الوحدات يعني أن شيئاً طُلب من النظام تشغيله وهو معطّل."
     cause: "انهارت وحدة systemd أو بلغت حد إعادة التشغيل أو فشل شرط بدئها (إعداد خاطئ، ملف مفقود، اعتماد ناقص)."
     dangerous: "حسب الوحدة — فشل خدمة نسخ احتياطي أو أمان مهم جدًا؛ خدمة شكلية أقل أهمية."
     impact: "ما تقدمه الوحدة متوقف: نسخ احتياطي، طباعة، تحديثات، مراقبة."
@@ -107,6 +121,8 @@
     remedy: "Run systemd-analyze blame, then disable or fix the worst offenders (e.g. systemctl disable NetworkManager-wait-online.service if nothing needs it)."
     risk_if_ignored: "No damage — just continued wasted time on every boot."
   ar:
+    title: "الإقلاع يستغرق {0} ثانية"
+    summary: "بدء التشغيل أبطأ مما ينبغي؛ أبطأ الوحدات مذكورة في الأدلة."
     cause: "وحدة أو أكثر تؤخر الإقلاع — كلاسيكيًا NetworkManager-wait-online أو تركيب snap أو مدخل fstab خاطئ ينتظر مهلة."
     dangerous: "لا، لكنها من أكثر المشاكل اليومية إزعاجًا."
     impact: "تنتظر دقيقة أو أكثر من التشغيل حتى سطح مكتب صالح للاستخدام."
@@ -121,6 +137,8 @@
     remedy: "Run sudo apt --fix-broken install, then sudo dpkg --configure -a if needed."
     risk_if_ignored: "You stop receiving updates, including security fixes."
   ar:
+    title: "{0} من الحزم في حالة مكسورة"
+    summary: "قاعدة بيانات الحزم تُبلغ عن حزم في حالة غير متسقة."
     cause: "قوطع تثبيت أو ترقية (انقطاع كهرباء، Ctrl-C، قرص ممتلئ) فبقيت قاعدة dpkg غير متسقة."
     dangerous: "نعم بالنسبة لصيانة النظام: التثبيت والترقيات اللاحقة غالبًا محجوبة."
     impact: "تفشل أوامر apt بأخطاء حتى تُصلح الحالة."
@@ -135,6 +153,8 @@
     remedy: "Run sudo apt autoremove --purge; Ubuntu always keeps the running kernel and one fallback."
     risk_if_ignored: "Eventually a kernel security update fails for lack of space in /boot."
   ar:
+    title: "{0} من النوى القديمة مثبتة"
+    summary: "صور النوى القديمة تشغل مساحة في ‎/boot؛ يكفي الاحتفاظ بنواة احتياطية واحدة."
     cause: "يحتفظ Ubuntu بكل نواة ثبّتها ما لم يعمل autoremove؛ تتراكم الصور في /boot و/lib/modules."
     dangerous: "لا — حتى يمتلئ /boot فتبدأ تحديثات النواة بالفشل."
     impact: "مئات الميغابايتات إلى عدة غيغابايتات مهدرة؛ وخطر فشل التحديثات إذا كان /boot صغيرًا."
@@ -149,6 +169,8 @@
     remedy: "Run sudo apt clean (removes all cached .deb files, entirely safe)."
     risk_if_ignored: "Only continued wasted space."
   ar:
+    title: "ذاكرة حزم APT المؤقتة تشغل {0} GiB"
+    summary: "ملفات ‎.deb المنزلة في ‎/var/cache/apt/archives يمكن حذفها بأمان."
     cause: "كل حزمة ينزّلها apt تبقى في /var/cache/apt/archives حتى تُنظَّف."
     dangerous: "لا — الذاكرة المؤقتة مجرد وسيلة راحة."
     impact: "مساحة قرص مهدرة، أحيانًا عدة غيغابايتات."
@@ -163,6 +185,8 @@
     remedy: "Run sudo apt update && sudo apt upgrade, or enable unattended-upgrades for automatic security patching."
     risk_if_ignored: "Growing exposure to known exploits — the single most important fix on this list."
   ar:
+    title: "{0} من التحديثات الأمنية معلّقة"
+    summary: "حزم تحمل إصلاحات أمنية معروفة تنتظر التثبيت."
     cause: "حزم لها إصلاحات أمنية منشورة ما زالت مثبتة دون ترقية."
     dangerous: "نعم — هذه تصلح ثغرات معروفة وكثيرًا ما تُستغل فعليًا."
     impact: "يبقى النظام مكشوفًا لمشاكل صارت علنية."
@@ -177,6 +201,8 @@
     remedy: "Run sudo apt update && sudo apt upgrade at a convenient moment."
     risk_if_ignored: "A growing backlog that makes future upgrades slower and more error-prone."
   ar:
+    title: "{0} من تحديثات الحزم معلّقة"
+    summary: "تراكم كبير من التحديثات يجمع أخطاءً عولجت أصلاً في المنبع."
     cause: "لم تُطبَّق التحديثات الاعتيادية منذ فترة."
     dangerous: "ليست عاجلة، ما لم تتضمن تحديثات أمنية."
     impact: "تفوتك إصلاحات علل وتصبح الترقية القادمة أكبر وأكثر خطورة."
@@ -191,6 +217,8 @@
     remedy: "Run sudo journalctl --vacuum-size=200M, and set SystemMaxUse=200M in /etc/systemd/journald.conf to cap it permanently."
     risk_if_ignored: "The journal keeps growing to its cap, worsening disk pressure."
   ar:
+    title: "سجل systemd يستهلك {0} GiB"
+    summary: "يكبر السجل بلا حدود ما لم يُضبط حد للحجم."
     cause: "يحتفظ systemd-journald بالسجلات حتى حده الأقصى؛ الافتراضي يسمح بعدة غيغابايتات."
     dangerous: "لا، لكنه يلتهم مساحة القرص بصمت."
     impact: "غيغابايتات مستهلكة بسجلات قديمة لن تقرأها غالبًا."
@@ -205,6 +233,8 @@
     remedy: "Inspect the file's tail to identify the noisy service, fix it, and check logrotate is active."
     risk_if_ignored: "The file keeps growing and the real fault behind it stays unfixed."
   ar:
+    title: "{0} من ملفات السجل الضخمة في ‎/var/log"
+    summary: "نمو ملف سجل إلى هذا الحجم يعني عادةً خدمة تُخطئ في حلقة."
     cause: "خدمة تسجّل بكثافة — عادة خطأ يتكرر في حلقة — أو أن تدوير السجلات معطّل."
     dangerous: "بشكل غير مباشر: الخطأ الكامن قد يكون مهمًا بذاته، والقرص يمتلئ."
     impact: "فقدان مساحة وإشارة إلى أن مكوّنًا ما غير سليم."
@@ -219,6 +249,8 @@
     remedy: "Run sudo snap set system refresh.retain=2, then remove disabled revisions with snap remove --revision."
     risk_if_ignored: "Only wasted disk space that grows with every update."
   ar:
+    title: "{0} من مراجعات snap المعطّلة محفوظة على القرص"
+    summary: "يحتفظ snapd بمراجعات قديمة من كل حزمة بعد التحديثات."
     cause: "يحتفظ snapd بالمراجعات السابقة لكل snap بعد التحديثات (افتراضيًا حتى 3)."
     dangerous: "لا — مجرد استهلاك قرص."
     impact: "كل مراجعة قديمة نسخة كاملة؛ التطبيقات الكبيرة تهدر غيغابايتات."
@@ -233,6 +265,8 @@
     remedy: "Run flatpak uninstall --unused (safe: it only removes runtimes no installed app needs)."
     risk_if_ignored: "Only wasted disk space; it never shrinks on its own."
   ar:
+    title: "{0} من بيئات Flatpak غير المستخدمة مثبتة"
+    summary: "بيئات التشغيل المتروكة بعد إزالة التطبيقات ما تزال تشغل مساحة على القرص."
     cause: "يثبّت Flatpak بيئة تشغيل مشتركة لكل تطبيق؛ وعند إزالة التطبيق قد تبقى بيئته."
     dangerous: "لا — مجرد استهلاك قرص."
     impact: "كل بيئة تشغيل مئات الميغابايتات إلى غيغابايتات من البيانات غير المستخدمة."
@@ -247,6 +281,8 @@
     remedy: "Plan a battery replacement; meanwhile limit max charge to 80% if the firmware supports it, and avoid heat."
     risk_if_ignored: "Runtime keeps shrinking until the laptop is desk-bound; swollen batteries are a physical hazard."
   ar:
+    title: "البطارية تحتفظ بـ {0}٪ فقط من سعتها التصميمية"
+    summary: "تقادمت البطارية؛ مدة التشغيل بشحنة كاملة انخفضت بشكل ملحوظ."
     cause: "بطاريات الليثيوم تشيخ كيميائيًا مع دورات الشحن والحرارة والزمن؛ تتقلص سعتها الكاملة."
     dangerous: "ليست خطيرة على النظام، لكن السعة تواصل التراجع."
     impact: "زمن أقصر بوضوح على البطارية؛ واحتمال انطفاء مفاجئ عند الشحن المنخفض."
@@ -261,6 +297,8 @@
     remedy: "Reconnect the network, restart NetworkManager (sudo systemctl restart NetworkManager), or check the router/cable."
     risk_if_ignored: "The machine stays offline: no browsing, updates or sync."
   ar:
+    title: "لا يوجد مسار شبكة افتراضي"
+    summary: "بدون مسار افتراضي لا يستطيع النظام الوصول إلى الإنترنت."
     cause: "لا توجد بوابة مضبوطة — الشبكة مقطوعة أو فشل DHCP أو أزال تغيير شبكة/VPN المسار."
     dangerous: "لا خطر على البيانات، لكن الاتصال معطّل."
     impact: "لا وصول للإنترنت؛ فقط الجهاز المحلي (وربما الشبكة المحلية) متاح."
@@ -275,6 +313,8 @@
     remedy: "Restart systemd-resolved (sudo systemctl restart systemd-resolved) or set a DNS server (e.g. 1.1.1.1) in the connection settings."
     risk_if_ignored: "Name resolution stays broken for every application."
   ar:
+    title: "لا توجد خوادم DNS مضبوطة"
+    summary: "سيفشل تحليل الأسماء: ‎/etc/resolv.conf لا يذكر أي خادم أسماء."
     cause: "لا يسرد ‎/etc/resolv.conf أي خوادم أسماء — خلل في إعداد المحلّل أو systemd-resolved."
     dangerous: "لا، لكن الإنترنت عمليًا غير قابل للاستخدام."
     impact: "تفشل المواقع بالاسم بينما الاتصال المباشر بالـ IP يعمل — العَرَض الكلاسيكي لـ«الإنترنت معطّل»."
@@ -289,6 +329,8 @@
     remedy: "Set PermitRootLogin prohibit-password (or no) in /etc/ssh/sshd_config and reload sshd; log in as a normal user and use sudo."
     risk_if_ignored: "Continuous automated attacks against the most valuable account on the system."
   ar:
+    title: "SSH يسمح بدخول root مباشرة"
+    summary: "sshd_config يضبط PermitRootLogin yes، ما يعرّض حساب root لتخمين كلمات المرور."
     cause: "يضبط sshd_config صراحةً PermitRootLogin yes."
     dangerous: "نعم على أي جهاز يمكن الوصول إليه شبكيًا: root أول حساب تجرّبه كل بوتات التخمين."
     impact: "تخمين أو تسريب كلمة مرور root وحدها يعني اختراقًا كاملًا."
@@ -303,6 +345,8 @@
     remedy: "Run sudo ufw enable — the default policy (deny incoming, allow outgoing) suits desktops with no extra rules."
     risk_if_ignored: "Any vulnerable listening service is directly exposed to whoever shares your network."
   ar:
+    title: "الجدار الناري مثبت لكنه غير مفعّل"
+    summary: "ufw موجود لكنه غير مفعّل؛ كل الخدمات المُنصتة مكشوفة للشبكة المحلية."
     cause: "ufw مثبّت لكنه لم يُفعَّل قط (يأتي معطلًا افتراضيًا في Ubuntu)."
     dangerous: "متوسطة — كل خدمة تستمع للشبكة متاحة من الشبكة المحلية."
     impact: "على الشبكات غير الموثوقة (مقاهٍ، مطارات) تستطيع الأجهزة الأخرى فحص منافذك المفتوحة."
@@ -317,6 +361,8 @@
     remedy: "Set up SSH keys, then set 'PasswordAuthentication no' in /etc/ssh/sshd_config and reload sshd."
     risk_if_ignored: "A weak or reused password can be guessed, handing over a shell on your machine."
   ar:
+    title: "SSH يقبل الدخول بكلمة المرور"
+    summary: "sshd يسمح بالمصادقة بكلمة المرور، وهي عرضة لهجمات التخمين."
     cause: "sshd مضبوط لقبول كلمات المرور (PasswordAuthentication yes)."
     dangerous: "نعم على أي جهاز يمكن الوصول إليه شبكيًا: كلمات المرور قابلة للتخمين، أما المفاتيح فلا."
     impact: "بوتات آلية تجرّب باستمرار كلمات مرور شائعة على خادم SSH لديك."
@@ -331,6 +377,8 @@
     remedy: "Bind services to 127.0.0.1 where possible, and enable the firewall (ufw) to gate the rest."
     risk_if_ignored: "Any vulnerability in an exposed service is reachable by everyone sharing your network."
   ar:
+    title: "{0} من الخدمات تُنصت على الشبكة"
+    summary: "هذه المنافذ تقبل اتصالات من أجهزة أخرى. تأكد أن كلاً منها مقصود، ودَع الجدار الناري يغطي البقية."
     cause: "خدمة أو أكثر مرتبطة بكل واجهات الشبكة (0.0.0.0 أو ::) بدلًا من localhost فقط."
     dangerous: "حسب الخدمة: قاعدة بيانات أو خادم تنقيح مكشوف للشبكة خطر؛ خدمة طباعة أقل خطورة."
     impact: "تستطيع الأجهزة الأخرى على شبكتك الاتصال بهذه الخدمات مباشرة."
@@ -345,6 +393,8 @@
     remedy: "Back up everything now, then replace the drive. Do not trust it with new data."
     risk_if_ignored: "Total, possibly unrecoverable data loss when the drive fails."
   ar:
+    title: "القرص {0} يُبلغ عن فشل SMART"
+    summary: "فشل {0} ({1}) في تقييم SMART الذاتي — القرص ينذر بعطل وشيك."
     cause: "فشل التقييم الذاتي SMART للقرص — تتنبأ برمجيته بعطل وشيك."
     dangerous: "نعم، حرج: هذا أقوى تحذير يعطيه القرص قبل أن يتعطل."
     impact: "فقدان البيانات محتمل وقد يكون مفاجئًا؛ قد يصبح القرص غير قابل للقراءة في أي لحظة."
@@ -359,6 +409,8 @@
     remedy: "Ensure backups are current and watch the count with SMART over the coming weeks."
     risk_if_ignored: "The drive may deteriorate to failure, risking data loss."
   ar:
+    title: "{0} فيه {1} من القطاعات المعاد تخصيصها"
+    summary: "أعاد القرص تخطيط قطاعات تالفة. تزايد العدد إشارة إلى تدهور مادي."
     cause: "وجد القرص قطاعات تالفة وأعاد تعيينها إلى احتياطية؛ والعدد يسجّل كم قطاعًا."
     dangerous: "القليل محتمَل؛ العدد المتزايد أو الكبير يشير إلى تآكل مادي مستمر."
     impact: "تزايد إعادة التعيين غالبًا يسبق العطل وقد يسبب أخطاء قراءة."
@@ -373,6 +425,8 @@
     remedy: "Keep backups current and plan a replacement before it reaches 100%."
     risk_if_ignored: "The SSD will eventually stop accepting writes, and data may be lost."
   ar:
+    title: "قرص SSD ‏{0} استهلك {1}٪ من عمر الكتابة المقدّر"
+    summary: "مؤشر التآكل في NVMe مرتفع؛ يقترب القرص من حد التحمل المقدّر له."
     cause: "لأقراص SSD عدد محدود من عمليات الكتابة؛ ومؤشر التآكل يبيّن كم استُهلك من العمر المقدّر."
     dangerous: "ليست خطيرة فورًا، لكن بعد ~90% يقترب القرص من حد تحمّله."
     impact: "مع اقترابه من 100% قد يصبح SSD للقراءة فقط أو يبدأ بفشل الكتابة."

@@ -399,8 +399,12 @@ fn report_view(
     }
     for finding in &report.findings {
         let row = adw::ExpanderRow::builder()
-            .title(glib::markup_escape_text(&finding.title))
-            .subtitle(glib::markup_escape_text(&finding.summary))
+            .title(glib::markup_escape_text(
+                &sysmedic_knowledge::localized_title(finding, lang),
+            ))
+            .subtitle(glib::markup_escape_text(
+                &sysmedic_knowledge::localized_summary(finding, lang),
+            ))
             .build();
         let badge = gtk::Label::new(Some(&finding.severity.label().to_uppercase()));
         badge.add_css_class("badge");
