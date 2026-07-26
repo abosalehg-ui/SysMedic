@@ -96,12 +96,14 @@ pub fn to_markdown(report: &HealthReport, lang: Lang) -> String {
     let _ = writeln!(
         out,
         "## {}: **{}/100** ({})\n",
-        l.score, report.score, report.grade
+        l.score,
+        report.score,
+        sysmedic_core::score::grade_label_in(report.score, lang)
     );
     let _ = writeln!(out, "| {} | |", l.categories);
     let _ = writeln!(out, "|---|---|");
     for cs in &report.category_scores {
-        let _ = writeln!(out, "| {} | {} |", cs.category.label(), cs.score);
+        let _ = writeln!(out, "| {} | {} |", cs.category.label_in(lang), cs.score);
     }
     let _ = writeln!(out, "\n## {} ({})\n", l.findings, report.findings.len());
     if report.findings.is_empty() {
@@ -112,9 +114,13 @@ pub fn to_markdown(report: &HealthReport, lang: Lang) -> String {
             out,
             "### [{}] {}\n",
             f.severity.label().to_uppercase(),
-            md_inline(&f.title)
+            md_inline(&sysmedic_knowledge::localized_title(f, lang))
         );
-        let _ = writeln!(out, "{}\n", md_inline(&f.summary));
+        let _ = writeln!(
+            out,
+            "{}\n",
+            md_inline(&sysmedic_knowledge::localized_summary(f, lang))
+        );
         if let Some(exp) = explain(&f.id, lang) {
             let _ = writeln!(out, "- **{}:** {}", l.cause, md_inline(&exp.cause));
             let _ = writeln!(out, "- **{}:** {}", l.dangerous, md_inline(&exp.dangerous));
@@ -182,8 +188,8 @@ pub fn to_html(report: &HealthReport, lang: Lang) -> String {
              <p>{summary}</p>{explanation}{evidence}</article>",
             sev = f.severity.label(),
             badge = esc(f.severity.label_in(lang)),
-            title = esc(&f.title),
-            summary = esc(&f.summary),
+            title = esc(&sysmedic_knowledge::localized_title(f, lang)),
+            summary = esc(&sysmedic_knowledge::localized_summary(f, lang)),
         );
     }
     let categories: String = report

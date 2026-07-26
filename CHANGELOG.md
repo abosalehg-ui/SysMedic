@@ -6,6 +6,19 @@ All notable changes to SysMedic are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Finding titles in Arabic** — the finding titles/summaries themselves now
+  localize through a per-id message catalog in the knowledge base (templates
+  with `{0}`-style placeholders filled from the finding's recorded values),
+  completing the Arabic story across the CLI report, HTML/Markdown reports
+  and the GUI. Missing translations fall back to the English rule text.
+- **Export from the GUI** — "Export report…" (Ctrl+E) saves the last checkup
+  as HTML, Markdown or JSON via a file dialog, written owner-only (0600).
+- **dnf and pacman support** — the packages collector detects the system's
+  package manager and reports correct upgradable/broken counts on Fedora and
+  Arch (with manager-appropriate fix hints) instead of a "dpkg not found"
+  error; apt keeps the fullest coverage.
+
 ### Security
 - polkit: `allow_active` is `auth_admin` (was `auth_admin_keep`) — a cached
   authorization let any session process silently re-invoke the fix helper

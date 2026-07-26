@@ -17,9 +17,9 @@ another monitor: the app you install first on a fresh Ubuntu.
 The confirmation dialog is the heart of the *prescribe* step: before anything
 changes you see exactly what will run, which paths it touches, its risk, and
 whether it can be undone. The Disk Usage page renders a squarified treemap of
-the folders eating your space. *(UI chrome, categories, grades, remedies and
-the fix-consent dialog are localized to Arabic; finding titles are still
-English until the gettext migration lands.)*
+the folders eating your space. *(Fully localized to Arabic — UI chrome,
+categories, grades, remedies, the fix-consent dialog and the finding
+titles/summaries themselves, via a per-finding message catalog.)*
 
 ```
   Health score: 97/100  (Excellent)
@@ -177,7 +177,7 @@ Created and maintained by **abosalehg-ui**.
 المكسورة...)، ويشرح كل مشكلة بالعربية دون إنترنت: ما سببها؟ هل هي خطيرة؟ ما
 تأثيرها؟ كيف تُصلح؟ وما خطر تجاهلها؟ — مع إصلاحات آمنة قابلة للمعاينة
 والتراجع تعمل عبر polkit، وواجهة GNOME حديثة (GTK4/libadwaita) مترجمة
-للعربية (واجهة التطبيق والفئات والتقدير والعلاجات وحوار تأكيد الإصلاح؛
-عناوين النتائج ما تزال بالإنجليزية حتى اكتمال الانتقال إلى gettext)،
+للعربية بالكامل (واجهة التطبيق والفئات والتقدير والعلاجات وحوار تأكيد
+الإصلاح وعناوين النتائج وملخصاتها عبر كتالوج رسائل لكل نتيجة)،
 وأدوات متقدّمة: محلّل القرص، فحص الشبكة، الجدولة،
 والإشعارات، وتصدير التقارير (HTML/PDF).

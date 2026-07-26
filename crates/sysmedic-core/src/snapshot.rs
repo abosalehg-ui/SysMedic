@@ -154,9 +154,17 @@ pub struct ServiceStats {
 
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct PackageInfo {
+    /// Which package manager produced this section: `"apt"`, `"dnf"` or
+    /// `"pacman"`. Lets diagnostics phrase remedies for the right tool and
+    /// keeps apt-specific fixes from being offered elsewhere.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manager: Option<String>,
     pub broken: Vec<String>,
-    /// Installed kernel image packages other than the running kernel.
+    /// Installed kernel image packages other than the running kernel
+    /// (collected on Debian-family systems only).
     pub old_kernels: Vec<String>,
+    /// Size of the APT download cache (apt systems only — gates the
+    /// apt-specific `fix.apt_clean`).
     pub apt_cache_bytes: Option<u64>,
     pub upgradable: Option<u32>,
     pub security_upgrades: Option<u32>,
