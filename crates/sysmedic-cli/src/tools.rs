@@ -12,10 +12,7 @@ use sysmedic_diskscan::human_size as human;
 use sysmedic_history::HistoryEntry;
 
 fn collect() -> Snapshot {
-    sysmedic_core::Engine::new()
-        .with_collectors(sysmedic_collectors::default_collectors())
-        .run()
-        .snapshot
+    sysmedic_collectors::default_snapshot()
 }
 
 /// `sysmedic disk [path]`: scan a directory and show the largest subtrees.
@@ -93,10 +90,7 @@ pub fn network() -> Result<()> {
 }
 
 fn full_report() -> HealthReport {
-    sysmedic_core::Engine::new()
-        .with_collectors(sysmedic_collectors::default_collectors())
-        .with_diagnostics(sysmedic_diagnostics::default_diagnostics())
-        .run()
+    sysmedic_diagnostics::default_engine().run()
 }
 
 /// `sysmedic monitor`: run a checkup, record it in history, and fire a desktop

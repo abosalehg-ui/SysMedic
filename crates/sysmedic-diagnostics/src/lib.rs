@@ -6,7 +6,16 @@
 
 pub mod rules;
 
-use sysmedic_core::{Diagnostic, Finding, Snapshot};
+use sysmedic_core::{Diagnostic, Engine, Finding, Snapshot};
+
+/// The standard checkup engine: default collectors + the full rule set.
+/// The single composition root — CLI, GUI and the fix helper previously each
+/// rebuilt this by hand, which is exactly how their configurations drift.
+pub fn default_engine() -> Engine {
+    Engine::new()
+        .with_collectors(sysmedic_collectors::default_collectors())
+        .with_diagnostics(default_diagnostics())
+}
 
 struct Rule {
     name: &'static str,

@@ -4,7 +4,7 @@
 # Needs: a release build with the GUI, plus `appimagetool` on PATH (or set
 # APPIMAGETOOL to its path). Run from anywhere; paths are resolved from the repo.
 #
-#   cargo build --release -p sysmedic-cli -p sysmedic-daemon -p sysmedic-gui
+#   cargo build --release -p sysmedic-cli -p sysmedic-fix-helper -p sysmedic-gui
 #   packaging/appimage/build-appimage.sh
 #
 # Bundling the GTK4/libadwaita runtime fully is best done with linuxdeploy and

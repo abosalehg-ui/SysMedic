@@ -9,7 +9,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{gio, glib};
 use sysmedic_core::fix::FixPlan;
-use sysmedic_core::{Engine, HealthReport};
+use sysmedic_core::HealthReport;
 use sysmedic_knowledge::Lang;
 
 use crate::viewmodel::{self, Strings};
@@ -41,10 +41,7 @@ pub fn load_css() {
 }
 
 fn run_engine() -> HealthReport {
-    let report = Engine::new()
-        .with_collectors(sysmedic_collectors::default_collectors())
-        .with_diagnostics(sysmedic_diagnostics::default_diagnostics())
-        .run();
+    let report = sysmedic_diagnostics::default_engine().run();
     // Record this checkup so the trend strip has data (best-effort). Throttled
     // so rapid refresh clicks don't flood history and turn the trend into a
     // click-rate graph; scheduled `monitor` runs are far enough apart to record.

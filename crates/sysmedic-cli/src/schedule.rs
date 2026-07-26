@@ -46,11 +46,21 @@ pub fn service_unit(exe: &str) -> String {
     // The executable path is quoted so a path containing spaces (e.g. under
     // `~/My Apps/`) still produces a valid `ExecStart`. systemd unquotes it
     // back into a single argv[0].
+    //
+    // Sandboxing: `monitor` only reads system state, appends to the user's
+    // history file and sends a desktop notification — it never escalates, so
+    // NoNewPrivileges is safe; PrivateTmp isolates its temp files; and
+    // ProtectSystem=full makes /usr, /boot and /etc read-only for the run.
+    // (`ProtectHome` is deliberately absent: history lives under
+    // ~/.local/state.)
     format!(
         "[Unit]\n\
          Description=SysMedic scheduled checkup\n\n\
          [Service]\n\
          Type=oneshot\n\
+         NoNewPrivileges=yes\n\
+         PrivateTmp=yes\n\
+         ProtectSystem=full\n\
          ExecStart=\"{exe}\" monitor\n"
     )
 }
@@ -172,6 +182,11 @@ mod tests {
         let unit = service_unit("/usr/bin/sysmedic");
         assert!(unit.contains("ExecStart=\"/usr/bin/sysmedic\" monitor"));
         assert!(unit.contains("Type=oneshot"));
+        // Sandboxing directives: the scheduled run needs no privileges and
+        // no write access outside the user's state dir.
+        assert!(unit.contains("NoNewPrivileges=yes"));
+        assert!(unit.contains("PrivateTmp=yes"));
+        assert!(unit.contains("ProtectSystem=full"));
     }
 
     #[test]

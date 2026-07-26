@@ -39,7 +39,7 @@ jobs:
       - name: Tests
         run: cargo test --workspace --locked
       - name: Build CLI + fix helper (release)
-        run: cargo build --release --locked -p sysmedic-cli -p sysmedic-daemon
+        run: cargo build --release --locked -p sysmedic-cli -p sysmedic-fix-helper
       - name: Smoke-run checkup
         run: ./target/release/sysmedic checkup --format json | head -c 2000
       - name: Smoke-run fix listing

@@ -45,7 +45,7 @@ modules:
         # Remove this and ship cargo-sources.json for a reproducible Flathub build.
         - --share=network
     build-commands:
-      - cargo build --release --locked -p sysmedic-cli -p sysmedic-daemon -p sysmedic-gui
+      - cargo build --release --locked -p sysmedic-cli -p sysmedic-fix-helper -p sysmedic-gui
       - install -Dm755 target/release/sysmedic /app/bin/sysmedic
       - install -Dm755 target/release/sysmedic-gui /app/bin/sysmedic-gui
       - install -Dm755 target/release/sysmedic-fix-helper /app/libexec/sysmedic-fix-helper

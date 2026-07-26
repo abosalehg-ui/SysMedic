@@ -12,6 +12,18 @@ use serde::{Deserialize, Serialize};
 use sysmedic_core::finding::Severity;
 use sysmedic_core::HealthReport;
 
+/// Why a history write failed. Reads are deliberately infallible (`load`
+/// returns an empty list) — only appends surface errors.
+#[derive(Debug, thiserror::Error)]
+pub enum HistoryError {
+    #[error("cannot access {path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
 /// One recorded checkup: when, the score, and how many findings by severity.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HistoryEntry {
@@ -53,11 +65,14 @@ pub fn default_path() -> PathBuf {
 }
 
 /// Append one entry, creating parent directories as needed.
-pub fn append(path: impl AsRef<Path>, entry: &HistoryEntry) -> Result<(), String> {
+pub fn append(path: impl AsRef<Path>, entry: &HistoryEntry) -> Result<(), HistoryError> {
     let path = path.as_ref();
+    let io = |p: &Path| {
+        let path = p.to_path_buf();
+        move |e: std::io::Error| HistoryError::Io { path, source: e }
+    };
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        std::fs::create_dir_all(parent).map_err(io(parent))?;
     }
     let mut opts = std::fs::OpenOptions::new();
     opts.create(true).append(true);
@@ -68,11 +83,9 @@ pub fn append(path: impl AsRef<Path>, entry: &HistoryEntry) -> Result<(), String
         use std::os::unix::fs::OpenOptionsExt as _;
         opts.mode(0o600);
     }
-    let mut file = opts
-        .open(path)
-        .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    let mut file = opts.open(path).map_err(io(path))?;
     let line = serde_json::to_string(entry).expect("entry serializes");
-    writeln!(file, "{line}").map_err(|e| format!("cannot write history: {e}"))
+    writeln!(file, "{line}").map_err(io(path))
 }
 
 /// Whether a new entry timestamped `new_at` should be recorded, given the most
@@ -102,7 +115,7 @@ pub fn append_throttled(
     path: impl AsRef<Path>,
     entry: &HistoryEntry,
     min_gap_secs: u64,
-) -> Result<bool, String> {
+) -> Result<bool, HistoryError> {
     let path = path.as_ref();
     let last = load(path).pop();
     if !should_record(
@@ -237,8 +250,8 @@ mod tests {
         let mut b = a.clone();
         b.at = "2026-07-24T10:01:00Z".into(); // 1 min later
 
-        assert_eq!(append_throttled(&path, &a, 300), Ok(true));
-        assert_eq!(append_throttled(&path, &b, 300), Ok(false));
+        assert!(append_throttled(&path, &a, 300).unwrap());
+        assert!(!append_throttled(&path, &b, 300).unwrap());
         assert_eq!(load(&path).len(), 1);
     }
 

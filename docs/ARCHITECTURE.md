@@ -20,7 +20,7 @@ engine.
 │                systemd, dpkg/apt, snap, flatpak, ufw)   │
 │                sysmedic-knowledge (embedded YAML, en/ar) │
 │                sysmedic-fixes (engine + journal),        │
-│                sysmedic-report, sysmedic-daemon          │
+│                sysmedic-report, sysmedic-fix-helper          │
 │                (sysmedic-fix-helper: pkexec + polkit)    │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -51,7 +51,7 @@ maintainability over ease of writing.
 | `sysmedic-diskscan` | Infra | Directory size tree + pure squarified-treemap layout |
 | `sysmedic-history` | Infra | Append-only health-score history (JSONL) + trend/sparkline |
 | `sysmedic-report` | Infra | JSON / Markdown / HTML / PDF (headless-browser print) rendering |
-| `sysmedic-daemon` | Infra | `sysmedic-fix-helper`: the pkexec/polkit-authorized privileged fix executor (scheduling uses systemd user timers, not a resident daemon) |
+| `sysmedic-fix-helper` | Infra | `sysmedic-fix-helper`: the pkexec/polkit-authorized privileged fix executor (scheduling uses systemd user timers, not a resident daemon) |
 | `sysmedic-cli` | Presentation | `checkup / checks / explain / fix / undo / disk / network / monitor / history / schedule` |
 | `sysmedic-gui` | Presentation | GTK4/libadwaita app (Overview + Disk Usage) |
 

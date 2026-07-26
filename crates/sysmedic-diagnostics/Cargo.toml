@@ -8,3 +8,4 @@ repository.workspace = true
 
 [dependencies]
 sysmedic-core = { workspace = true }
+sysmedic-collectors = { workspace = true }

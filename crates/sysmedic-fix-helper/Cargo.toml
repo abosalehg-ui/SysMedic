@@ -1,5 +1,5 @@
 [package]
-name = "sysmedic-daemon"
+name = "sysmedic-fix-helper"
 description = "sysmedic-fix-helper — the privileged, polkit-authorized fix executor for SysMedic"
 version.workspace = true
 edition.workspace = true

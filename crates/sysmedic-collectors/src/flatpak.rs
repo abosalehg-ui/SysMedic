@@ -43,11 +43,20 @@ pub fn unused_refs(runtimes: &str, app_runtimes: &str) -> Vec<String> {
             let mut cols = line.split_whitespace();
             let app = cols.next()?;
             let reference = cols.next().unwrap_or(app);
-            // A runtime is needed if some app's runtime column matches its
-            // application id or full ref.
-            let is_needed = needed
-                .iter()
-                .any(|r| r.contains(app) || reference.contains(*r) || *r == reference);
+            // A runtime is needed if some app's runtime column names exactly
+            // this ref (after normalizing the optional `runtime/` prefix) or —
+            // when the column carries only a bare id — this runtime's id.
+            // Exact matching, not substring: `contains` marked Platform/22.08
+            // as needed because an app used Platform/23.08.
+            let ref_norm = reference.strip_prefix("runtime/").unwrap_or(reference);
+            let is_needed = needed.iter().any(|r| {
+                let r_norm = r.strip_prefix("runtime/").unwrap_or(r);
+                if r_norm.contains('/') {
+                    r_norm == ref_norm
+                } else {
+                    r_norm == app
+                }
+            });
             (!is_needed).then(|| reference.to_string())
         })
         .collect()

@@ -19,10 +19,7 @@ fn helper_path() -> String {
 }
 
 fn collect() -> Snapshot {
-    sysmedic_core::Engine::new()
-        .with_collectors(sysmedic_collectors::default_collectors())
-        .run()
-        .snapshot
+    sysmedic_collectors::default_snapshot()
 }
 
 /// `sysmedic fix` with no id: list every fix that applies right now.
@@ -66,8 +63,8 @@ pub fn apply(id: &str, dry_run: bool, yes: bool) -> Result<()> {
     }
 
     if fixes::is_root() {
-        let mut journal = Journal::load(fixes::journal_path()).map_err(anyhow::Error::msg)?;
-        let outcome = fixes::apply(&plan, &RealRunner, &mut journal).map_err(anyhow::Error::msg)?;
+        let mut journal = Journal::load(fixes::journal_path())?;
+        let outcome = fixes::apply(&plan, &RealRunner, &mut journal)?;
         println!("{} applied {}.", "✓".green(), outcome.fix_id.bold());
         for line in outcome.outputs.iter().filter(|l| !l.is_empty()) {
             println!("  {}", line.dimmed());
@@ -96,8 +93,8 @@ pub fn undo(yes: bool) -> Result<()> {
     }
 
     if fixes::is_root() {
-        let mut journal = Journal::load(fixes::journal_path()).map_err(anyhow::Error::msg)?;
-        let title = fixes::undo(&RealRunner, &mut journal).map_err(anyhow::Error::msg)?;
+        let mut journal = Journal::load(fixes::journal_path())?;
+        let title = fixes::undo(&RealRunner, &mut journal)?;
         println!("{} reverted {}.", "✓".green(), title.bold());
         Ok(())
     } else {

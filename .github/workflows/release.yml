@@ -27,7 +27,7 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
       - name: Build release binaries
-        run: cargo build --release --locked -p sysmedic-cli -p sysmedic-daemon -p sysmedic-gui
+        run: cargo build --release --locked -p sysmedic-cli -p sysmedic-fix-helper -p sysmedic-gui
       - name: Build .deb
         run: packaging/deb/build-deb.sh
       - name: Assemble AppDir

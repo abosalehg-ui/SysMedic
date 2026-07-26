@@ -18,12 +18,29 @@ use std::path::{Path, PathBuf};
 
 pub use command::{CommandRunner, RealRunner, RecordingRunner};
 pub use fixes::{fix_for_finding, undo_commands, Fix, FIX_IDS};
-pub use journal::{Journal, JournalEntry};
+pub use journal::{Journal, JournalEntry, JournalError};
 use sysmedic_core::fix::FixPlan;
 use sysmedic_core::Snapshot;
 
 /// System-wide journal path used by the privileged helper.
 pub const SYSTEM_JOURNAL: &str = "/var/lib/sysmedic/journal.json";
+
+/// Why applying or undoing a fix failed. Typed so callers can react to the
+/// class of failure (retry an I/O hiccup, surface a failed command verbatim,
+/// treat a corrupt journal as needing attention) instead of matching strings.
+#[derive(Debug, thiserror::Error)]
+pub enum FixError {
+    /// A fix command failed; the message is the runner's full report
+    /// (command, exit status, stderr).
+    #[error("{0}")]
+    CommandFailed(String),
+    #[error(transparent)]
+    Journal(#[from] JournalError),
+    #[error("nothing to undo — no reversible fix has been applied")]
+    NothingToUndo,
+    #[error("cannot undo unknown fix '{0}'")]
+    UnknownFix(String),
+}
 
 /// Outcome of applying a fix.
 #[derive(Debug)]
@@ -55,10 +72,10 @@ pub fn apply(
     plan: &FixPlan,
     runner: &dyn CommandRunner,
     journal: &mut Journal,
-) -> Result<ApplyOutcome, String> {
+) -> Result<ApplyOutcome, FixError> {
     let mut outputs = Vec::new();
     for command in &plan.commands {
-        outputs.push(runner.run(command)?);
+        outputs.push(runner.run(command).map_err(FixError::CommandFailed)?);
     }
     journal.record(JournalEntry {
         fix_id: plan.id.clone(),
@@ -81,15 +98,13 @@ pub fn apply(
 /// journal file. This keeps the trust boundary the same as `apply`: even if
 /// the journal on disk were tampered with, `undo` can only run the fixed,
 /// audited undo commands of a known fix — never arbitrary injected commands.
-pub fn undo(runner: &dyn CommandRunner, journal: &mut Journal) -> Result<String, String> {
-    let (index, entry) = journal
-        .last_undoable()
-        .ok_or("nothing to undo — no reversible fix has been applied")?;
+pub fn undo(runner: &dyn CommandRunner, journal: &mut Journal) -> Result<String, FixError> {
+    let (index, entry) = journal.last_undoable().ok_or(FixError::NothingToUndo)?;
     let (title, fix_id) = (entry.title.clone(), entry.fix_id.clone());
-    let commands = fixes::undo_commands(&fix_id)
-        .ok_or_else(|| format!("cannot undo unknown fix '{fix_id}'"))?;
+    let commands =
+        fixes::undo_commands(&fix_id).ok_or_else(|| FixError::UnknownFix(fix_id.clone()))?;
     for command in &commands {
-        runner.run(command)?;
+        runner.run(command).map_err(FixError::CommandFailed)?;
     }
     journal.mark_undone(index)?;
     Ok(title)

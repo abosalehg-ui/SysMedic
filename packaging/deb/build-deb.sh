@@ -6,7 +6,7 @@
 # (The systemd user timer is generated at runtime by `sysmedic schedule`, not
 # shipped in the package.) Run from the repository root after:
 #
-#   cargo build --release -p sysmedic-cli -p sysmedic-daemon [-p sysmedic-gui]
+#   cargo build --release -p sysmedic-cli -p sysmedic-fix-helper [-p sysmedic-gui]
 #
 # The GUI is optional: it is only packaged when target/release/sysmedic-gui exists
 # (it needs libgtk-4/libadwaita to build).

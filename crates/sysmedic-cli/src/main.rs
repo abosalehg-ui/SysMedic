@@ -139,9 +139,7 @@ fn resolve_lang(cli: Option<CliLang>) -> Lang {
 }
 
 fn engine() -> Engine {
-    Engine::new()
-        .with_collectors(sysmedic_collectors::default_collectors())
-        .with_diagnostics(sysmedic_diagnostics::default_diagnostics())
+    sysmedic_diagnostics::default_engine()
 }
 
 /// Write `contents` to `path` with owner-only permissions (0600 on Unix).

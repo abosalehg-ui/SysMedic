@@ -18,22 +18,18 @@
 
 use std::process::ExitCode;
 
-use sysmedic_core::Engine;
 use sysmedic_fixes::{
     apply, journal_path, plan, undo, CommandRunner, Journal, RealRunner, SYSTEM_JOURNAL,
 };
 
 fn snapshot() -> sysmedic_core::Snapshot {
-    // Reuse the checkup engine purely for collection (no diagnostics needed).
-    let report = Engine::new()
-        .with_collectors(sysmedic_collectors::default_collectors())
-        .run();
-    report.snapshot
+    // Collection only — the helper needs no diagnostics to rebuild a plan.
+    sysmedic_collectors::default_snapshot()
 }
 
 fn open_journal() -> Result<Journal, String> {
     // The helper always runs as root, so this resolves to SYSTEM_JOURNAL.
-    Journal::load(journal_path())
+    Journal::load(journal_path()).map_err(|e| e.to_string())
 }
 
 /// What the helper was asked to do. The only free-form input from the caller
@@ -77,7 +73,7 @@ fn run() -> Result<String, String> {
             let plan = plan(&fix_id, &snapshot)
                 .ok_or_else(|| format!("fix '{fix_id}' is unknown or not applicable right now"))?;
             let mut journal = open_journal()?;
-            let outcome = apply(&plan, runner, &mut journal)?;
+            let outcome = apply(&plan, runner, &mut journal).map_err(|e| e.to_string())?;
             Ok(format!(
                 "Applied {} ({}). Journal: {SYSTEM_JOURNAL}",
                 outcome.fix_id, plan.title
@@ -85,7 +81,7 @@ fn run() -> Result<String, String> {
         }
         Action::Undo => {
             let mut journal = open_journal()?;
-            let title = undo(runner, &mut journal)?;
+            let title = undo(runner, &mut journal).map_err(|e| e.to_string())?;
             Ok(format!("Reverted: {title}"))
         }
         Action::ListJournal => {
