@@ -166,7 +166,7 @@ Created and maintained by **abosalehg-ui**.
 
 - Repository: <https://github.com/abosalehg-ui/SysMedic>
 - Issues: <https://github.com/abosalehg-ui/SysMedic/issues>
-- Contact: <ar0.history@gmail.com>
+- Contact: <abo.saleh.g@gmail.com>
 
 ---
 
