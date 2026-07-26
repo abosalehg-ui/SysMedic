@@ -28,6 +28,38 @@ pub struct Snapshot {
     pub collection_errors: Vec<String>,
 }
 
+impl Snapshot {
+    /// Fold another (partial) snapshot into this one. The engine collects
+    /// each section on its own thread into a fresh `Snapshot`, then merges
+    /// them in collector order; each collector fills only its own sections,
+    /// so for `Option` fields the first value set wins and error notes are
+    /// concatenated.
+    pub fn merge(&mut self, other: Snapshot) {
+        fn keep<T>(dst: &mut Option<T>, src: Option<T>) {
+            if dst.is_none() {
+                *dst = src;
+            }
+        }
+        keep(&mut self.cpu, other.cpu);
+        keep(&mut self.memory, other.memory);
+        keep(&mut self.disks, other.disks);
+        keep(&mut self.thermal, other.thermal);
+        keep(&mut self.processes, other.processes);
+        keep(&mut self.services, other.services);
+        keep(&mut self.packages, other.packages);
+        keep(&mut self.boot, other.boot);
+        keep(&mut self.logs, other.logs);
+        keep(&mut self.network, other.network);
+        keep(&mut self.security, other.security);
+        keep(&mut self.battery, other.battery);
+        keep(&mut self.snap, other.snap);
+        keep(&mut self.flatpak, other.flatpak);
+        keep(&mut self.smart, other.smart);
+        keep(&mut self.ports, other.ports);
+        self.collection_errors.extend(other.collection_errors);
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct CpuInfo {
     pub model: String,

@@ -3,7 +3,7 @@
 //! commands — so every fix is unit-tested against fixture snapshots.
 
 use sysmedic_core::fix::{FixCommand, FixPlan};
-use sysmedic_core::{Severity, Snapshot};
+use sysmedic_core::{thresholds, Severity, Snapshot};
 
 /// One safe fix SysMedic can offer.
 pub trait Fix: Send + Sync {
@@ -33,7 +33,7 @@ impl Fix for AptClean {
     }
     fn plan(&self, s: &Snapshot) -> Option<FixPlan> {
         let bytes = s.packages.as_ref()?.apt_cache_bytes?;
-        if bytes < 100 * 1024 * 1024 {
+        if bytes < thresholds::packages::APT_CACHE_FIX_BYTES {
             return None;
         }
         Some(FixPlan {
@@ -61,7 +61,7 @@ impl Fix for JournalVacuum {
     }
     fn plan(&self, s: &Snapshot) -> Option<FixPlan> {
         let bytes = s.logs.as_ref()?.journal_bytes?;
-        if bytes < 1024 * 1024 * 1024 {
+        if bytes < thresholds::journal::LARGE_BYTES {
             return None;
         }
         Some(FixPlan {
@@ -89,7 +89,7 @@ impl Fix for AutoremoveKernels {
     }
     fn plan(&self, s: &Snapshot) -> Option<FixPlan> {
         let kernels = &s.packages.as_ref()?.old_kernels;
-        if kernels.len() <= 2 {
+        if kernels.len() <= thresholds::packages::OLD_KERNELS_KEPT {
             return None;
         }
         Some(FixPlan {

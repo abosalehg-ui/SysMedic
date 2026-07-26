@@ -10,6 +10,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# The default GITHUB_TOKEN can be repo-writable; CI only needs to read code.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -18,13 +22,16 @@ jobs:
     name: Format, lint & test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install GTK4/libadwaita dev libraries
         run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to a commit of the `stable` branch; the toolchain is selected via
+      # the input (a SHA ref no longer encodes it the way `@stable` did).
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
+          toolchain: stable
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
@@ -32,7 +39,7 @@ jobs:
       - name: Tests
         run: cargo test --workspace --locked
       - name: Build CLI + fix helper (release)
-        run: cargo build --release --locked -p sysmedic-cli -p sysmedic-daemon
+        run: cargo build --release --locked -p sysmedic-cli -p sysmedic-fix-helper
       - name: Smoke-run checkup
         run: ./target/release/sysmedic checkup --format json | head -c 2000
       - name: Smoke-run fix listing
@@ -54,3 +61,15 @@ jobs:
           packaging/deb/build-deb.sh
           dpkg-deb --info sysmedic_*.deb
           dpkg-deb --contents sysmedic_*.deb | grep -q usr/bin/sysmedic
+
+  # Fail the build on known RUSTSEC advisories in Cargo.lock. Dependabot keeps
+  # dependencies fresh; this gate catches an advisory landing between updates —
+  # which matters for a binary that runs privileged fixes.
+  audit:
+    name: Dependency advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

@@ -41,7 +41,9 @@ pub fn parse_analyze_time(s: &str) -> Option<f64> {
     parse_duration(total.split("\n").next()?.trim())
 }
 
-/// Parse systemd durations: `5.123s`, `1min 30.2s`, `2ms`, `1h 2min`.
+/// Parse systemd durations: `5.123s`, `1min 30.2s`, `2ms`, `1h 2min`,
+/// `1day 2h`, `2w 1d`. Long-uptime machines report day/week units; without
+/// those arms the boot analysis silently degraded to a collection error.
 pub fn parse_duration(s: &str) -> Option<f64> {
     let mut total = 0.0;
     let mut matched = false;
@@ -52,6 +54,18 @@ pub fn parse_duration(s: &str) -> Option<f64> {
             (60.0, v)
         } else if let Some(v) = part.strip_suffix('h') {
             (3600.0, v)
+        } else if let Some(v) = part
+            .strip_suffix("days")
+            .or_else(|| part.strip_suffix("day"))
+            .or_else(|| part.strip_suffix('d'))
+        {
+            (86_400.0, v)
+        } else if let Some(v) = part
+            .strip_suffix("weeks")
+            .or_else(|| part.strip_suffix("week"))
+            .or_else(|| part.strip_suffix('w'))
+        {
+            (604_800.0, v)
         } else {
             (1.0, part.strip_suffix('s')?)
         };

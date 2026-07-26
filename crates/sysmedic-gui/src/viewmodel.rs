@@ -31,7 +31,13 @@ pub struct Strings {
     pub overview: &'static str,
     pub disk_usage: &'static str,
     pub disk_scanning: &'static str,
+    pub disk_scan_failed: &'static str,
+    pub disk_empty: &'static str,
+    pub disk_largest: &'static str,
     pub history_tooltip: &'static str,
+    pub fix_running: &'static str,
+    pub fix_applied: &'static str,
+    pub treemap_a11y: &'static str,
 }
 
 impl Strings {
@@ -64,7 +70,13 @@ impl Strings {
                 overview: "Overview",
                 disk_usage: "Disk Usage",
                 disk_scanning: "Scanning your home folder…",
+                disk_scan_failed: "The disk scan failed. The folder may be unreadable.",
+                disk_empty: "Nothing to show — the folder appears to be empty.",
+                disk_largest: "Largest entries",
                 history_tooltip: "Health-score history (most recent on the right)",
+                fix_running: "Applying the fix…",
+                fix_applied: "Fix applied — re-checking…",
+                treemap_a11y: "Treemap of the largest folders; the list below has the same data",
             },
             Lang::Ar => &Strings {
                 health_score: "الدرجة الصحية",
@@ -91,7 +103,13 @@ impl Strings {
                 overview: "النظرة العامة",
                 disk_usage: "استخدام القرص",
                 disk_scanning: "جارٍ فحص مجلد المنزل…",
+                disk_scan_failed: "فشل فحص القرص. قد يكون المجلد غير قابل للقراءة.",
+                disk_empty: "لا شيء لعرضه — يبدو المجلد فارغاً.",
+                disk_largest: "أكبر العناصر",
                 history_tooltip: "سجل الدرجة الصحية (الأحدث على اليمين)",
+                fix_running: "جارٍ تطبيق الإصلاح…",
+                fix_applied: "طُبّق الإصلاح — إعادة فحص…",
+                treemap_a11y: "خريطة شجرية لأكبر المجلدات؛ القائمة أدناه تعرض البيانات نفسها",
             },
         }
     }
@@ -120,12 +138,12 @@ pub struct CategoryRow {
     pub score: u8,
 }
 
-pub fn category_rows(report: &HealthReport) -> Vec<CategoryRow> {
+pub fn category_rows(report: &HealthReport, lang: Lang) -> Vec<CategoryRow> {
     report
         .category_scores
         .iter()
         .map(|cs| CategoryRow {
-            label: cs.category.label(),
+            label: cs.category.label_in(lang),
             score: cs.score,
         })
         .collect()
@@ -184,7 +202,13 @@ mod tests {
     #[test]
     fn category_rows_cover_all_categories() {
         let report = HealthReport::build(Snapshot::default(), vec![]);
-        assert_eq!(category_rows(&report).len(), report.category_scores.len());
+        assert_eq!(
+            category_rows(&report, Lang::En).len(),
+            report.category_scores.len()
+        );
+        // Arabic rows carry Arabic labels, not the English fallback.
+        let ar = category_rows(&report, Lang::Ar);
+        assert!(ar.iter().any(|r| r.label == "التخزين"));
     }
 
     #[test]

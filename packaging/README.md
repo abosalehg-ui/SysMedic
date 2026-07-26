@@ -13,7 +13,7 @@ release compile of the workspace.
 ## `.deb` (recommended for Ubuntu/Debian)
 
 ```bash
-cargo build --release -p sysmedic-cli -p sysmedic-daemon -p sysmedic-gui
+cargo build --release -p sysmedic-cli -p sysmedic-fix-helper -p sysmedic-gui
 packaging/deb/build-deb.sh          # -> sysmedic_<version>_<arch>.deb
 sudo apt install ./sysmedic_*.deb
 ```
@@ -46,7 +46,7 @@ that needs a Flathub account.
 ## AppImage
 
 ```bash
-cargo build --release -p sysmedic-cli -p sysmedic-daemon -p sysmedic-gui
+cargo build --release -p sysmedic-cli -p sysmedic-fix-helper -p sysmedic-gui
 packaging/appimage/build-appimage.sh   # -> SysMedic-<version>-<arch>.AppImage
 ```
 

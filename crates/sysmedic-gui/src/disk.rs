@@ -1,5 +1,6 @@
 //! The Disk Usage page: a squarified treemap of the largest directories,
-//! drawn with cairo. The scan runs on a worker thread so the UI stays live.
+//! drawn with cairo, plus an accessible list of the same data. The scan runs
+//! on a worker thread so the UI stays live.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -13,31 +14,42 @@ use crate::viewmodel::Strings;
 
 /// How many top-level entries to show as treemap tiles.
 const MAX_TILES: usize = 60;
+/// How many entries the accessible list below the treemap shows.
+const MAX_LIST_ROWS: usize = 8;
 
-/// Deterministic pleasant-ish color per label (stable across redraws).
+/// A small curated palette (GNOME palette shades) instead of arbitrary
+/// hash-derived HSL: the old saturated candy colors clashed with the
+/// otherwise restrained Adwaita look. Hashing picks a stable entry per label.
+const PALETTE: [(f64, f64, f64); 8] = [
+    (0.11, 0.44, 0.85), // blue4    #1c71d8
+    (0.15, 0.64, 0.41), // green4   #26a269
+    (0.90, 0.65, 0.04), // yellow4  #e5a50a
+    (0.90, 0.38, 0.00), // orange4  #e66100
+    (0.57, 0.25, 0.67), // purple3  #9141ac
+    (0.60, 0.42, 0.27), // brown3   #986a44
+    (0.37, 0.36, 0.39), // dark3    #5e5c64
+    (0.38, 0.63, 0.92), // blue2    #62a0ea
+];
+
+/// Deterministic palette color per label (stable across redraws).
 fn color_for(label: &str) -> (f64, f64, f64) {
     let mut hash: u32 = 2166136261;
     for b in label.bytes() {
         hash = (hash ^ b as u32).wrapping_mul(16777619);
     }
-    let hue = (hash % 360) as f64;
-    hsl_to_rgb(hue, 0.55, 0.55)
+    PALETTE[(hash % PALETTE.len() as u32) as usize]
 }
 
-fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
-    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
-    let hp = h / 60.0;
-    let x = c * (1.0 - (hp % 2.0 - 1.0).abs());
-    let (r, g, b) = match hp as u32 {
-        0 => (c, x, 0.0),
-        1 => (x, c, 0.0),
-        2 => (0.0, c, x),
-        3 => (0.0, x, c),
-        4 => (x, 0.0, c),
-        _ => (c, 0.0, x),
-    };
-    let m = l - c / 2.0;
-    (r + m, g + m, b + m)
+/// Black or white label text, picked by the tile's relative luminance so the
+/// label passes contrast on light tiles (the old fixed white text failed on
+/// yellow/light-blue).
+fn text_color_for(bg: (f64, f64, f64)) -> (f64, f64, f64) {
+    let luminance = 0.2126 * bg.0 + 0.7152 * bg.1 + 0.0722 * bg.2;
+    if luminance > 0.55 {
+        (0.10, 0.10, 0.12)
+    } else {
+        (1.0, 1.0, 1.0)
+    }
 }
 
 pub fn disk_page(lang: Lang) -> gtk::Box {
@@ -61,13 +73,31 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
     let area = gtk::DrawingArea::builder()
         .vexpand(true)
         .hexpand(true)
+        .accessible_role(gtk::AccessibleRole::Img)
         .build();
+    // The canvas itself is invisible to assistive tech; name it and point at
+    // the equivalent list below.
+    area.update_property(&[gtk::accessible::Property::Label(strings.treemap_a11y)]);
+    area.set_tooltip_text(Some(strings.treemap_a11y));
 
     area.set_draw_func({
         let tree = tree.clone();
         move |_, cr, width, height| draw_treemap(cr, width, height, tree.borrow().as_ref())
     });
     root.append(&area);
+
+    // The same data as rows — readable by screen readers and keyboard users.
+    let list_heading = gtk::Label::new(Some(strings.disk_largest));
+    list_heading.add_css_class("heading");
+    list_heading.set_xalign(0.0);
+    list_heading.set_visible(false);
+    let list = gtk::ListBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .css_classes(["boxed-list"])
+        .visible(false)
+        .build();
+    root.append(&list_heading);
+    root.append(&list);
 
     // Scan the home directory in the background, then draw.
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
@@ -80,10 +110,36 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
             let scan_path = home.clone();
             let scanned =
                 gtk::gio::spawn_blocking(move || sysmedic_diskscan::scan(&scan_path, 2)).await;
-            if let Ok(node) = scanned {
-                subtitle.set_text(&format!("{} — {}", home, human_size(node.size)));
-                *tree.borrow_mut() = Some(node);
-                area.queue_draw();
+            match scanned {
+                // An empty result usually means the folder was unreadable or
+                // genuinely empty — either way, say so instead of leaving the
+                // "Scanning…" subtitle up forever over a blank canvas.
+                Ok(node) if node.size == 0 || node.children.is_empty() => {
+                    subtitle.set_text(strings.disk_empty);
+                }
+                Ok(node) => {
+                    subtitle.set_text(&format!("{} — {}", home, human_size(node.size)));
+                    for child in node.children.iter().take(MAX_LIST_ROWS) {
+                        let title = if child.is_dir {
+                            format!("{}/", child.name)
+                        } else {
+                            child.name.clone()
+                        };
+                        let row = adw::ActionRow::builder()
+                            .title(glib::markup_escape_text(&title))
+                            .build();
+                        let size = gtk::Label::new(Some(&human_size(child.size)));
+                        size.add_css_class("numeric");
+                        size.add_css_class("dim-label");
+                        row.add_suffix(&size);
+                        list.append(&row);
+                    }
+                    list_heading.set_visible(true);
+                    list.set_visible(true);
+                    *tree.borrow_mut() = Some(node);
+                    area.queue_draw();
+                }
+                Err(_) => subtitle.set_text(strings.disk_scan_failed),
             }
         }
     });
@@ -123,7 +179,8 @@ fn draw_treemap(cr: &gtk::cairo::Context, width: i32, height: i32, tree: Option<
 
         // Label the tile if it is large enough to read.
         if tile.rect.w > 64.0 && tile.rect.h > 30.0 {
-            cr.set_source_rgb(1.0, 1.0, 1.0);
+            let (tr, tg, tb) = text_color_for((r, g, b));
+            cr.set_source_rgb(tr, tg, tb);
             cr.select_font_face(
                 "sans-serif",
                 gtk::cairo::FontSlant::Normal,
@@ -157,5 +214,12 @@ mod tests {
         for v in [a.0, a.1, a.2] {
             assert!((0.0..=1.0).contains(&v));
         }
+    }
+
+    #[test]
+    fn label_text_contrasts_with_tile() {
+        // Light tiles get dark text, dark tiles get light text.
+        assert_eq!(text_color_for((0.90, 0.65, 0.04)).0, 0.10); // yellow4
+        assert_eq!(text_color_for((0.11, 0.44, 0.85)).0, 1.0); // blue4
     }
 }

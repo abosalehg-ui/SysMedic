@@ -43,7 +43,7 @@ parts:
       craftctl set version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
     override-build: |
       cargo build --release --locked \
-        -p sysmedic-cli -p sysmedic-daemon -p sysmedic-gui
+        -p sysmedic-cli -p sysmedic-fix-helper -p sysmedic-gui
       install -Dm755 target/release/sysmedic "$CRAFT_PART_INSTALL/bin/sysmedic"
       install -Dm755 target/release/sysmedic-gui "$CRAFT_PART_INSTALL/bin/sysmedic-gui"
       install -Dm755 target/release/sysmedic-fix-helper \

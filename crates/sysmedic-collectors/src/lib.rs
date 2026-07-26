@@ -24,7 +24,17 @@ pub mod snap;
 pub mod thermal;
 mod util;
 
-use sysmedic_core::Collector;
+use sysmedic_core::{Collector, Engine, Snapshot};
+
+/// Collect a [`Snapshot`] with the default collector set — the one
+/// composition of "collectors only" shared by every consumer that doesn't
+/// need diagnostics (fix applicability, the privileged helper).
+pub fn default_snapshot() -> Snapshot {
+    Engine::new()
+        .with_collectors(default_collectors())
+        .run()
+        .snapshot
+}
 
 /// The full set of collectors for a standard Ubuntu/Debian desktop.
 pub fn default_collectors() -> Vec<Box<dyn Collector>> {

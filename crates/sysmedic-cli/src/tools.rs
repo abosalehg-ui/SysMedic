@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::Result;
-use owo_colors::OwoColorize;
+use owo_colors::{OwoColorize, Stream};
 use sysmedic_core::alert::Alert;
 use sysmedic_core::finding::Severity;
 use sysmedic_core::{HealthReport, Snapshot};
@@ -12,10 +12,7 @@ use sysmedic_diskscan::human_size as human;
 use sysmedic_history::HistoryEntry;
 
 fn collect() -> Snapshot {
-    sysmedic_core::Engine::new()
-        .with_collectors(sysmedic_collectors::default_collectors())
-        .run()
-        .snapshot
+    sysmedic_collectors::default_snapshot()
 }
 
 /// `sysmedic disk [path]`: scan a directory and show the largest subtrees.
@@ -25,7 +22,7 @@ pub fn disk(path: Option<String>, depth: u32, top: usize) -> Result<()> {
     let tree = sysmedic_diskscan::scan(&root, depth.max(1));
     println!(
         "\n  {}  {}\n",
-        human(tree.size).bold(),
+        human(tree.size).if_supports_color(Stream::Stdout, |t| t.bold()),
         Path::new(&root).display()
     );
     let children = sysmedic_diskscan::largest_children(&tree, top);
@@ -51,52 +48,73 @@ pub fn disk(path: Option<String>, depth: u32, top: usize) -> Result<()> {
 pub fn network() -> Result<()> {
     let snapshot = collect();
 
-    println!("{}", "Network".bold());
+    println!(
+        "{}",
+        "Network".if_supports_color(Stream::Stdout, |t| t.bold())
+    );
     match &snapshot.network {
         Some(net) => {
             let route = if net.has_default_route {
-                "yes".green().to_string()
+                "yes"
+                    .if_supports_color(Stream::Stdout, |t| t.green())
+                    .to_string()
             } else {
-                "no".red().to_string()
+                "no".if_supports_color(Stream::Stdout, |t| t.red())
+                    .to_string()
             };
             println!("  Default route:  {route}");
             let dns = if net.dns_servers.is_empty() {
-                "(none)".red().to_string()
+                "(none)"
+                    .if_supports_color(Stream::Stdout, |t| t.red())
+                    .to_string()
             } else {
                 net.dns_servers.join(", ")
             };
             println!("  DNS servers:    {dns}");
         }
-        None => println!("  {}", "network info unavailable".dimmed()),
+        None => println!(
+            "  {}",
+            "network info unavailable".if_supports_color(Stream::Stdout, |t| t.dimmed())
+        ),
     }
 
     match latency("1.1.1.1") {
         Some(ms) => println!("  Latency:        {ms:.1} ms (1.1.1.1)"),
-        None => println!("  Latency:        {}", "unavailable (no ping)".dimmed()),
+        None => println!(
+            "  Latency:        {}",
+            "unavailable (no ping)".if_supports_color(Stream::Stdout, |t| t.dimmed())
+        ),
     }
 
-    println!("\n{}", "Listening ports".bold());
+    println!(
+        "\n{}",
+        "Listening ports".if_supports_color(Stream::Stdout, |t| t.bold())
+    );
     match &snapshot.ports {
         Some(ports) if !ports.is_empty() => {
             for p in ports {
                 let scope = if p.exposed {
-                    "network".yellow().to_string()
+                    "network"
+                        .if_supports_color(Stream::Stdout, |t| t.yellow())
+                        .to_string()
                 } else {
-                    "localhost".green().to_string()
+                    "localhost"
+                        .if_supports_color(Stream::Stdout, |t| t.green())
+                        .to_string()
                 };
                 println!("  {:>5}/{:<5} {:<18} [{scope}]", p.port, p.proto, p.address);
             }
         }
-        _ => println!("  {}", "no listening TCP ports found".dimmed()),
+        _ => println!(
+            "  {}",
+            "no listening TCP ports found".if_supports_color(Stream::Stdout, |t| t.dimmed())
+        ),
     }
     Ok(())
 }
 
 fn full_report() -> HealthReport {
-    sysmedic_core::Engine::new()
-        .with_collectors(sysmedic_collectors::default_collectors())
-        .with_diagnostics(sysmedic_diagnostics::default_diagnostics())
-        .run()
+    sysmedic_diagnostics::default_engine().run()
 }
 
 /// `sysmedic monitor`: run a checkup, record it in history, and fire a desktop
@@ -123,7 +141,12 @@ pub fn monitor(quiet: bool) -> Result<()> {
             alerts.len()
         );
         for a in &alerts {
-            println!("  {} {}: {}", "!".yellow(), a.title.bold(), a.body);
+            println!(
+                "  {} {}: {}",
+                "!".if_supports_color(Stream::Stdout, |t| t.yellow()),
+                a.title.if_supports_color(Stream::Stdout, |t| t.bold()),
+                a.body
+            );
         }
     }
     Ok(())
@@ -140,6 +163,8 @@ fn notify(alert: &Alert) {
         .args([
             "--app-name=SysMedic",
             &format!("--urgency={urgency}"),
+            // `--` so a title that ever starts with `-` cannot become an option.
+            "--",
             &alert.title,
             &alert.body,
         ])
@@ -153,14 +178,22 @@ pub fn history() -> Result<()> {
         println!("No history yet. Run `sysmedic monitor` or enable `sysmedic schedule daily`.");
         return Ok(());
     }
-    println!("{}", "Health-score history".bold());
-    println!("  {}", sysmedic_history::sparkline(&entries, 40).cyan());
+    println!(
+        "{}",
+        "Health-score history".if_supports_color(Stream::Stdout, |t| t.bold())
+    );
+    println!(
+        "  {}",
+        sysmedic_history::sparkline(&entries, 40).if_supports_color(Stream::Stdout, |t| t.cyan())
+    );
     if let Some(delta) = sysmedic_history::trend_delta(&entries) {
         let text = format!("{delta:+}");
         let colored = if delta >= 0 {
-            text.green().to_string()
+            text.if_supports_color(Stream::Stdout, |t| t.green())
+                .to_string()
         } else {
-            text.red().to_string()
+            text.if_supports_color(Stream::Stdout, |t| t.red())
+                .to_string()
         };
         println!("  Trend since first record: {colored}");
     }

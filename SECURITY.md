@@ -19,7 +19,7 @@ reports within a few days.
 
 The security-critical surface is the privileged path:
 
-- `sysmedic-fix-helper` (crate `sysmedic-daemon`) is the only component that
+- `sysmedic-fix-helper` (crate `sysmedic-fix-helper`) is the only component that
   runs as root. It is launched through **pkexec**/**polkit** and accepts a
   fix **id** only — never a command or a serialized plan — and rebuilds the
   plan from a compiled-in registry, so a compromised unprivileged caller

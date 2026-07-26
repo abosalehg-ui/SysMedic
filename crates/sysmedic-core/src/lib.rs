@@ -9,11 +9,13 @@ pub mod alert;
 pub mod engine;
 pub mod finding;
 pub mod fix;
+pub mod lang;
 pub mod score;
 pub mod snapshot;
 pub mod thresholds;
 
 pub use engine::{Collector, Diagnostic, Engine};
 pub use finding::{Category, Finding, Severity};
+pub use lang::Lang;
 pub use score::{CategoryScore, HealthReport};
 pub use snapshot::Snapshot;

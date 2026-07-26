@@ -10,6 +10,24 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use sysmedic_core::fix::FixCommand;
 
+/// Why a journal operation failed. Typed so callers can distinguish a corrupt
+/// file (user intervention needed) from plain I/O trouble.
+#[derive(Debug, thiserror::Error)]
+pub enum JournalError {
+    #[error("corrupt journal at {path}: {source}")]
+    Corrupt {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("cannot access {path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
 /// One applied fix, with everything needed to undo it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct JournalEntry {
@@ -33,13 +51,15 @@ pub struct Journal {
 
 impl Journal {
     /// Load the journal at `path`, or an empty one if it does not exist.
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, String> {
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, JournalError> {
         let path = path.as_ref().to_path_buf();
         let entries = match std::fs::read_to_string(&path) {
-            Ok(raw) => serde_json::from_str(&raw)
-                .map_err(|e| format!("corrupt journal at {}: {e}", path.display()))?,
+            Ok(raw) => serde_json::from_str(&raw).map_err(|e| JournalError::Corrupt {
+                path: path.clone(),
+                source: e,
+            })?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-            Err(e) => return Err(format!("cannot read {}: {e}", path.display())),
+            Err(e) => return Err(JournalError::Io { path, source: e }),
         };
         Ok(Journal { path, entries })
     }
@@ -49,7 +69,7 @@ impl Journal {
     }
 
     /// Append an entry and persist.
-    pub fn record(&mut self, entry: JournalEntry) -> Result<(), String> {
+    pub fn record(&mut self, entry: JournalEntry) -> Result<(), JournalError> {
         self.entries.push(entry);
         self.save()
     }
@@ -64,17 +84,20 @@ impl Journal {
     }
 
     /// Mark the entry at `index` undone and persist.
-    pub fn mark_undone(&mut self, index: usize) -> Result<(), String> {
+    pub fn mark_undone(&mut self, index: usize) -> Result<(), JournalError> {
         if let Some(entry) = self.entries.get_mut(index) {
             entry.undone = true;
         }
         self.save()
     }
 
-    fn save(&self) -> Result<(), String> {
+    fn save(&self) -> Result<(), JournalError> {
+        let io = |p: &Path| {
+            let path = p.to_path_buf();
+            move |e: std::io::Error| JournalError::Io { path, source: e }
+        };
         let dir = self.path.parent().unwrap_or_else(|| Path::new("."));
-        std::fs::create_dir_all(dir)
-            .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+        std::fs::create_dir_all(dir).map_err(io(dir))?;
         // Lock the state directory down to its owner. For the privileged
         // helper this is `/var/lib/sysmedic`, owned by root — so an
         // unprivileged user cannot plant or rewrite `journal.json`, whose
@@ -95,13 +118,15 @@ impl Journal {
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW)
             .open(&tmp)
-            .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
-        file.write_all(json.as_bytes())
-            .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+            .map_err(io(&tmp))?;
+        file.write_all(json.as_bytes()).map_err(io(&tmp))?;
         drop(file);
         std::fs::rename(&tmp, &self.path).map_err(|e| {
             let _ = std::fs::remove_file(&tmp);
-            format!("cannot finalize {}: {e}", self.path.display())
+            JournalError::Io {
+                path: self.path.clone(),
+                source: e,
+            }
         })
     }
 }

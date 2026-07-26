@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
-use owo_colors::OwoColorize;
+use owo_colors::{OwoColorize, Stream};
 
 const SERVICE: &str = "sysmedic-checkup.service";
 const TIMER: &str = "sysmedic-checkup.timer";
@@ -46,11 +46,21 @@ pub fn service_unit(exe: &str) -> String {
     // The executable path is quoted so a path containing spaces (e.g. under
     // `~/My Apps/`) still produces a valid `ExecStart`. systemd unquotes it
     // back into a single argv[0].
+    //
+    // Sandboxing: `monitor` only reads system state, appends to the user's
+    // history file and sends a desktop notification — it never escalates, so
+    // NoNewPrivileges is safe; PrivateTmp isolates its temp files; and
+    // ProtectSystem=full makes /usr, /boot and /etc read-only for the run.
+    // (`ProtectHome` is deliberately absent: history lives under
+    // ~/.local/state.)
     format!(
         "[Unit]\n\
          Description=SysMedic scheduled checkup\n\n\
          [Service]\n\
          Type=oneshot\n\
+         NoNewPrivileges=yes\n\
+         PrivateTmp=yes\n\
+         ProtectSystem=full\n\
          ExecStart=\"{exe}\" monitor\n"
     )
 }
@@ -118,13 +128,13 @@ pub fn enable(cadence: Cadence) -> Result<()> {
     match systemctl(&["enable", "--now", TIMER]) {
         Ok(()) => println!(
             "{} Scheduled {} checkups. See status with `systemctl --user list-timers`.",
-            "✓".green(),
+            "✓".if_supports_color(Stream::Stdout, |t| t.green()),
             cadence.label()
         ),
         Err(_) => println!(
             "{} Installed the {} timer units, but could not activate them here \
              (no user systemd session). On your desktop run:\n    systemctl --user enable --now {}",
-            "!".yellow(),
+            "!".if_supports_color(Stream::Stdout, |t| t.yellow()),
             cadence.label(),
             TIMER
         ),
@@ -139,7 +149,10 @@ pub fn disable() -> Result<()> {
     let _ = std::fs::remove_file(dir.join(TIMER));
     let _ = std::fs::remove_file(dir.join(SERVICE));
     systemctl(&["daemon-reload"]).ok();
-    println!("{} Scheduled checkups disabled.", "✓".green());
+    println!(
+        "{} Scheduled checkups disabled.",
+        "✓".if_supports_color(Stream::Stdout, |t| t.green())
+    );
     Ok(())
 }
 
@@ -151,11 +164,14 @@ pub fn status() -> Result<()> {
     if !installed {
         println!(
             "Scheduled checkups: {}. Enable with `sysmedic schedule daily`.",
-            "off".yellow()
+            "off".if_supports_color(Stream::Stdout, |t| t.yellow())
         );
         return Ok(());
     }
-    println!("Scheduled checkups: {}", "on".green());
+    println!(
+        "Scheduled checkups: {}",
+        "on".if_supports_color(Stream::Stdout, |t| t.green())
+    );
     // Best-effort: show the next run time.
     let _ = std::process::Command::new("systemctl")
         .args(["--user", "list-timers", TIMER, "--no-pager"])
@@ -172,6 +188,11 @@ mod tests {
         let unit = service_unit("/usr/bin/sysmedic");
         assert!(unit.contains("ExecStart=\"/usr/bin/sysmedic\" monitor"));
         assert!(unit.contains("Type=oneshot"));
+        // Sandboxing directives: the scheduled run needs no privileges and
+        // no write access outside the user's state dir.
+        assert!(unit.contains("NoNewPrivileges=yes"));
+        assert!(unit.contains("PrivateTmp=yes"));
+        assert!(unit.contains("ProtectSystem=full"));
     }
 
     #[test]

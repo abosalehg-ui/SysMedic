@@ -46,9 +46,43 @@ impl Engine {
     }
 
     pub fn run(&self) -> HealthReport {
+        // Collectors are independent (each fills only its own snapshot
+        // sections) and dominated by subprocess wait time — `apt list` alone
+        // takes seconds, and a hung tool burns its full 10 s timeout. Running
+        // them serially made the checkup as slow as the *sum* of its tools;
+        // scoped threads make it as slow as the slowest one. Results are
+        // merged in declaration order, so output stays deterministic.
         let mut snapshot = Snapshot::default();
-        for collector in &self.collectors {
-            collector.collect(&mut snapshot);
+        let partials: Vec<Result<Snapshot, &'static str>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = self
+                .collectors
+                .iter()
+                .map(|collector| {
+                    let name = collector.name();
+                    (
+                        name,
+                        scope.spawn(move || {
+                            let mut partial = Snapshot::default();
+                            collector.collect(&mut partial);
+                            partial
+                        }),
+                    )
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|(name, handle)| handle.join().map_err(|_| name))
+                .collect()
+        });
+        for partial in partials {
+            match partial {
+                Ok(p) => snapshot.merge(p),
+                // A panicking collector violates its contract; degrade to a
+                // skipped check instead of poisoning the whole checkup.
+                Err(name) => snapshot
+                    .collection_errors
+                    .push(format!("{name}: collector panicked")),
+            }
         }
         self.diagnose(snapshot)
     }
@@ -93,5 +127,68 @@ mod tests {
             .run();
         assert_eq!(report.findings.len(), 1);
         assert!(report.score < 100);
+    }
+
+    struct MemoryCollector;
+    impl Collector for MemoryCollector {
+        fn name(&self) -> &'static str {
+            "memory"
+        }
+        fn collect(&self, snapshot: &mut Snapshot) {
+            snapshot.memory = Some(crate::snapshot::MemoryInfo {
+                total_kb: 1000,
+                available_kb: 500,
+                swap_total_kb: 0,
+                swap_free_kb: 0,
+            });
+        }
+    }
+
+    struct FailingCollector;
+    impl Collector for FailingCollector {
+        fn name(&self) -> &'static str {
+            "failing"
+        }
+        fn collect(&self, snapshot: &mut Snapshot) {
+            snapshot.collection_errors.push("failing: no tool".into());
+        }
+    }
+
+    struct PanickingCollector;
+    impl Collector for PanickingCollector {
+        fn name(&self) -> &'static str {
+            "panicking"
+        }
+        fn collect(&self, _: &mut Snapshot) {
+            panic!("contract violation");
+        }
+    }
+
+    #[test]
+    fn parallel_collectors_merge_sections_and_errors() {
+        let report = Engine::new()
+            .with_collectors(vec![Box::new(MemoryCollector), Box::new(FailingCollector)])
+            .run();
+        assert!(report.snapshot.memory.is_some());
+        assert_eq!(
+            report.snapshot.collection_errors,
+            vec!["failing: no tool".to_string()]
+        );
+    }
+
+    #[test]
+    fn panicking_collector_degrades_to_skipped_check() {
+        let report = Engine::new()
+            .with_collectors(vec![
+                Box::new(PanickingCollector),
+                Box::new(MemoryCollector),
+            ])
+            .run();
+        assert!(report.snapshot.memory.is_some());
+        assert!(report
+            .snapshot
+            .collection_errors
+            .iter()
+            .any(|e| e.contains("panicking")));
     }
 }

@@ -196,13 +196,14 @@ pub mod services {
 }
 
 pub mod boot {
+    use sysmedic_core::thresholds;
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
     pub fn slow_boot(s: &Snapshot) -> Vec<Finding> {
         let Some(boot) = &s.boot else { return vec![] };
-        let severity = if boot.total_seconds > 120.0 {
+        let severity = if boot.total_seconds > thresholds::boot::VERY_SLOW_S {
             Severity::High
-        } else if boot.total_seconds > 60.0 {
+        } else if boot.total_seconds > thresholds::boot::SLOW_S {
             Severity::Medium
         } else {
             return vec![];
@@ -226,6 +227,7 @@ pub mod boot {
 
 pub mod packages {
     use super::gb;
+    use sysmedic_core::thresholds;
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
     pub fn broken(s: &Snapshot) -> Vec<Finding> {
@@ -250,7 +252,7 @@ pub mod packages {
         let Some(pkgs) = &s.packages else {
             return vec![];
         };
-        if pkgs.old_kernels.len() <= 2 {
+        if pkgs.old_kernels.len() <= thresholds::packages::OLD_KERNELS_KEPT {
             return vec![];
         }
         vec![Finding::new(
@@ -271,7 +273,7 @@ pub mod packages {
         let Some(bytes) = pkgs.apt_cache_bytes else {
             return vec![];
         };
-        if bytes < 1024 * 1024 * 1024 {
+        if bytes < thresholds::packages::APT_CACHE_LARGE_BYTES {
             return vec![];
         }
         vec![Finding::new(
@@ -306,7 +308,7 @@ pub mod packages {
             return vec![];
         };
         match pkgs.upgradable {
-            Some(n) if n > 20 => vec![Finding::new(
+            Some(n) if n > thresholds::packages::UPGRADABLE_BACKLOG => vec![Finding::new(
                 "packages.upgrades_pending",
                 Category::Packages,
                 Severity::Low,
@@ -321,6 +323,7 @@ pub mod packages {
 
 pub mod logs {
     use super::gb;
+    use sysmedic_core::thresholds;
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
     pub fn journal_large(s: &Snapshot) -> Vec<Finding> {
@@ -328,9 +331,9 @@ pub mod logs {
         let Some(bytes) = logs.journal_bytes else {
             return vec![];
         };
-        let severity = if bytes >= 4 * 1024 * 1024 * 1024 {
+        let severity = if bytes >= thresholds::journal::HUGE_BYTES {
             Severity::High
-        } else if bytes >= 1024 * 1024 * 1024 {
+        } else if bytes >= thresholds::journal::LARGE_BYTES {
             Severity::Medium
         } else {
             return vec![];
@@ -428,6 +431,7 @@ pub mod flatpak {
 }
 
 pub mod battery {
+    use sysmedic_core::thresholds;
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
     pub fn degraded(s: &Snapshot) -> Vec<Finding> {
@@ -437,9 +441,9 @@ pub mod battery {
         let Some(health) = battery.health_percent else {
             return vec![];
         };
-        let severity = if health < 40.0 {
+        let severity = if health < thresholds::battery::WORN_OUT_PCT {
             Severity::High
-        } else if health < 60.0 {
+        } else if health < thresholds::battery::DEGRADED_PCT {
             Severity::Medium
         } else {
             return vec![];
@@ -563,6 +567,7 @@ pub mod security {
 }
 
 pub mod smart {
+    use sysmedic_core::thresholds;
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
     pub fn failing(s: &Snapshot) -> Vec<Finding> {
@@ -599,7 +604,7 @@ pub mod smart {
                 if count == 0 {
                     return None;
                 }
-                let severity = if count >= 50 {
+                let severity = if count >= thresholds::smart::REALLOCATED_HIGH {
                     Severity::High
                 } else {
                     Severity::Medium
@@ -626,10 +631,10 @@ pub mod smart {
             .iter()
             .filter_map(|d| {
                 let wear = d.wear_percent?;
-                if wear < 80 {
+                if wear < thresholds::smart::WEAR_PCT {
                     return None;
                 }
-                let severity = if wear >= 100 {
+                let severity = if wear >= thresholds::smart::WEAR_HIGH_PCT {
                     Severity::High
                 } else {
                     Severity::Medium
