@@ -312,6 +312,7 @@ mod tests {
         let s = Snapshot {
             packages: Some(PackageInfo {
                 manager: Some("apt".into()),
+                pacman_cache_bytes: None,
                 apt_cache_bytes: Some(2 * 1024 * 1024 * 1024),
                 ..Default::default()
             }),

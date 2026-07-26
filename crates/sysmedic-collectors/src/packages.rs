@@ -115,6 +115,14 @@ fn collect_dnf() -> PackageInfo {
     if let Some(out) = util::run_captured("dnf", &["-q", "check"]) {
         info.broken = parse_dnf_check(&out.stdout);
     }
+
+    // Security advisories among the pending updates (cached metadata only).
+    if let Some(out) = util::run_captured(
+        "dnf",
+        &["-q", "--cacheonly", "updateinfo", "--list", "--security"],
+    ) {
+        info.security_upgrades = Some(parse_dnf_security(&out.stdout));
+    }
     info
 }
 
@@ -135,6 +143,10 @@ fn collect_pacman() -> PackageInfo {
     if let Some(out) = util::run_captured("pacman", &["-Dk"]) {
         info.broken = parse_pacman_dk(&out.stdout);
     }
+
+    // pacman never prunes its cache by itself: every version of every package
+    // ever installed stays in /var/cache/pacman/pkg until cleaned.
+    info.pacman_cache_bytes = Some(util::dir_size("/var/cache/pacman/pkg", 1));
     info
 }
 
@@ -226,6 +238,21 @@ pub fn parse_dnf_check(s: &str) -> Vec<String> {
         .collect()
 }
 
+/// Count of security advisories from
+/// `dnf -q updateinfo --list --security`: one `ADVISORY-ID severity/type pkg`
+/// line per affected update (header lines like "Last metadata…" are skipped).
+pub fn parse_dnf_security(s: &str) -> u32 {
+    s.lines()
+        .filter(|l| {
+            let mut cols = l.split_whitespace();
+            // Advisory rows have >= 3 columns and an id like FEDORA-2026-xxxx.
+            matches!(cols.next(), Some(first) if first.contains('-') && first.chars().next().is_some_and(|c| c.is_ascii_uppercase()))
+                && cols.next().is_some()
+                && cols.next().is_some()
+        })
+        .count() as u32
+}
+
 /// Count of pending upgrades from `pacman -Qu`
 /// (`name current -> new` per line; `[ignored]` entries are skipped).
 pub fn parse_pacman_upgrades(s: &str) -> u32 {
@@ -292,6 +319,16 @@ grub2-tools.x86_64             1:2.06-123.fc40              updates\n";
         let fixture = "bar-2.0-1.x86_64 has missing requires of libfoo.so.1\n";
         assert_eq!(parse_dnf_check(fixture), vec!["bar-2.0-1.x86_64"]);
         assert!(parse_dnf_check("\n").is_empty());
+    }
+
+    #[test]
+    fn counts_dnf_security_advisories() {
+        let fixture = "\
+Last metadata expiration check: 0:20:11 ago on Sat 26 Jul 2026.\n\
+FEDORA-2026-0a1b2c3d4e Important/Sec. openssl-3.2.1-2.fc40.x86_64\n\
+FEDORA-2026-5f6a7b8c9d Moderate/Sec.  curl-8.6.0-3.fc40.x86_64\n";
+        assert_eq!(parse_dnf_security(fixture), 2);
+        assert_eq!(parse_dnf_security(""), 0);
     }
 
     #[test]

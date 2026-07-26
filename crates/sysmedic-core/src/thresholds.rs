@@ -84,4 +84,8 @@ pub mod packages {
     /// deliberately lower than the finding threshold, so the fix is available
     /// before the cache becomes report-worthy.
     pub const APT_CACHE_FIX_BYTES: u64 = 100 * 1024 * 1024;
+    /// pacman cache size that raises `packages.pacman_cache_large` (Low).
+    /// Higher than the APT threshold: pacman deliberately keeps every
+    /// downloaded version, so a couple of GiB is normal on Arch.
+    pub const PACMAN_CACHE_LARGE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 }

@@ -55,6 +55,10 @@ pub fn default_diagnostics() -> Vec<Box<dyn Diagnostic>> {
         rule!("packages-old-kernels", rules::packages::old_kernels),
         rule!("packages-apt-cache-large", rules::packages::apt_cache_large),
         rule!(
+            "packages-pacman-cache-large",
+            rules::packages::pacman_cache_large
+        ),
+        rule!(
             "packages-security-updates",
             rules::packages::security_updates
         ),
@@ -102,6 +106,7 @@ pub const FINDING_IDS: &[&str] = &[
     "packages.broken",
     "packages.old_kernels",
     "packages.apt_cache_large",
+    "packages.pacman_cache_large",
     "packages.security_updates",
     "packages.upgrades_pending",
     "logs.journal_large",
