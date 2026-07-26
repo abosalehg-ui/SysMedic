@@ -253,6 +253,25 @@ pub mod packages {
     use sysmedic_core::thresholds;
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
+    /// The upgrade command for the system's package manager (defaults to apt
+    /// when the manager is unknown — the historical behavior).
+    fn upgrade_hint(manager: Option<&str>) -> &'static str {
+        match manager {
+            Some("dnf") => "sudo dnf upgrade",
+            Some("pacman") => "sudo pacman -Syu",
+            _ => "sudo apt update && sudo apt upgrade",
+        }
+    }
+
+    /// The broken-package repair command per package manager.
+    fn repair_hint(manager: Option<&str>) -> &'static str {
+        match manager {
+            Some("dnf") => "sudo dnf check && sudo dnf distro-sync",
+            Some("pacman") => "sudo pacman -Dk && sudo pacman -Syu",
+            _ => "sudo apt --fix-broken install",
+        }
+    }
+
     pub fn broken(s: &Snapshot) -> Vec<Finding> {
         let Some(pkgs) = &s.packages else {
             return vec![];
@@ -265,10 +284,10 @@ pub mod packages {
             Category::Packages,
             Severity::High,
             format!("{} broken package(s)", pkgs.broken.len()),
-            "The dpkg database reports packages in an inconsistent state.",
+            "The package database reports packages in an inconsistent state.",
         )
         .with_evidence(pkgs.broken.clone())
-        .with_fix_hint("sudo apt --fix-broken install")
+        .with_fix_hint(repair_hint(pkgs.manager.as_deref()))
         .with_args(vec![pkgs.broken.len().to_string()])]
     }
 
@@ -324,7 +343,7 @@ pub mod packages {
                 format!("{n} security update(s) pending"),
                 "Packages with known security fixes are waiting to be installed.",
             )
-            .with_fix_hint("sudo apt update && sudo apt upgrade")
+            .with_fix_hint(upgrade_hint(pkgs.manager.as_deref()))
             .with_args(vec![n.to_string()])],
             _ => vec![],
         }
@@ -342,7 +361,7 @@ pub mod packages {
                 format!("{n} package update(s) pending"),
                 "A large backlog of updates accumulates bugs already fixed upstream.",
             )
-            .with_fix_hint("sudo apt update && sudo apt upgrade")
+            .with_fix_hint(upgrade_hint(pkgs.manager.as_deref()))
             .with_args(vec![n.to_string()])],
             _ => vec![],
         }
@@ -783,6 +802,7 @@ mod tests {
     fn security_updates_are_high_severity() {
         let mut s = snapshot();
         s.packages = Some(PackageInfo {
+            manager: Some("apt".into()),
             security_upgrades: Some(3),
             ..Default::default()
         });
@@ -846,6 +866,7 @@ mod tests {
             slowest_units: vec![],
         });
         s.packages = Some(PackageInfo {
+            manager: Some("apt".into()),
             broken: vec!["libfoo".into()],
             old_kernels: vec!["a".into(), "b".into(), "c".into()],
             apt_cache_bytes: Some(2 * 1024 * 1024 * 1024),
@@ -910,5 +931,33 @@ mod tests {
         for id in crate::FINDING_IDS {
             assert!(fired.iter().any(|f| f == id), "rule for {id} never fired");
         }
+    }
+
+    #[test]
+    fn package_hints_follow_the_package_manager() {
+        use sysmedic_core::snapshot::PackageInfo;
+        let mut s = Snapshot {
+            packages: Some(PackageInfo {
+                manager: Some("dnf".into()),
+                upgradable: Some(50),
+                security_upgrades: Some(0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let f = &super::packages::upgrades_pending(&s)[0];
+        assert_eq!(f.fix_hint.as_deref(), Some("sudo dnf upgrade"));
+
+        s.packages.as_mut().unwrap().manager = Some("pacman".into());
+        let f = &super::packages::upgrades_pending(&s)[0];
+        assert_eq!(f.fix_hint.as_deref(), Some("sudo pacman -Syu"));
+
+        // Unknown manager keeps the historical apt hint.
+        s.packages.as_mut().unwrap().manager = None;
+        let f = &super::packages::upgrades_pending(&s)[0];
+        assert_eq!(
+            f.fix_hint.as_deref(),
+            Some("sudo apt update && sudo apt upgrade")
+        );
     }
 }

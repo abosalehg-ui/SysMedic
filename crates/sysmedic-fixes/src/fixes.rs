@@ -311,6 +311,7 @@ mod tests {
     fn apt_clean_applies_above_threshold() {
         let s = Snapshot {
             packages: Some(PackageInfo {
+                manager: Some("apt".into()),
                 apt_cache_bytes: Some(2 * 1024 * 1024 * 1024),
                 ..Default::default()
             }),
@@ -343,6 +344,7 @@ mod tests {
     fn autoremove_needs_more_than_two_old_kernels() {
         let mut s = Snapshot {
             packages: Some(PackageInfo {
+                manager: Some("apt".into()),
                 old_kernels: vec!["a".into(), "b".into()],
                 ..Default::default()
             }),
