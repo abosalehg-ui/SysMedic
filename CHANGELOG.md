@@ -6,7 +6,20 @@ All notable changes to SysMedic are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-26
+
+The hardening-and-honesty release: everything from the comprehensive
+engineering/UX/security review, the complete Arabic story, and package
+hygiene beyond Debian.
+
 ### Added
+- **dnf security advisories** — `security_upgrades` is populated from
+  `dnf updateinfo --list --security`, with a dnf-appropriate remedy.
+- **pacman cache finding** — `packages.pacman_cache_large` (with bilingual
+  knowledge and a `paccache -rk2` hint); pacman never prunes its cache.
+- **Real Arabic screenshot** — `dashboard-ar.png` is now captured from the
+  live app running under an `ar_SA.UTF-8` locale, confirming full RTL
+  mirroring end-to-end.
 - **Finding titles in Arabic** — the finding titles/summaries themselves now
   localize through a per-id message catalog in the knowledge base (templates
   with `{0}`-style placeholders filled from the finding's recorded values),

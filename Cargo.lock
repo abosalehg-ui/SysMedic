@@ -1141,7 +1141,7 @@ dependencies = [
 
 [[package]]
 name = "sysmedic-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1158,7 +1158,7 @@ dependencies = [
 
 [[package]]
 name = "sysmedic-collectors"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "serde_json",
@@ -1167,7 +1167,7 @@ dependencies = [
 
 [[package]]
 name = "sysmedic-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "humantime",
  "serde",
@@ -1175,7 +1175,7 @@ dependencies = [
 
 [[package]]
 name = "sysmedic-diagnostics"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "sysmedic-collectors",
  "sysmedic-core",
@@ -1183,7 +1183,7 @@ dependencies = [
 
 [[package]]
 name = "sysmedic-diskscan"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "tempfile",
@@ -1191,7 +1191,7 @@ dependencies = [
 
 [[package]]
 name = "sysmedic-fix-helper"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "sysmedic-collectors",
  "sysmedic-core",
@@ -1200,7 +1200,7 @@ dependencies = [
 
 [[package]]
 name = "sysmedic-fixes"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "humantime",
  "libc",
@@ -1213,7 +1213,7 @@ dependencies = [
 
 [[package]]
 name = "sysmedic-gui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "gtk4",
  "libadwaita",
@@ -1229,7 +1229,7 @@ dependencies = [
 
 [[package]]
 name = "sysmedic-history"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "humantime",
  "serde",
@@ -1241,7 +1241,7 @@ dependencies = [
 
 [[package]]
 name = "sysmedic-knowledge"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "once_cell",
  "serde",
@@ -1254,7 +1254,7 @@ dependencies = [
 
 [[package]]
 name = "sysmedic-report"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "sysmedic-core",
