@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SysMedic — طبيب لنظام لينكس</title>
+<meta name="description" content="SysMedic يفحص نظام لينكس ويشخّص مشاكله ويشرحها بالعربية ويصلحها بأمان، مع درجة صحية من 100 وتطبيق GNOME أصيل.">
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1b1b21; --muted: #5c5c68; --card: #f6f6f8;
+    --border: #e2e2e8; --accent: #3584e4; --accent-fg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1b21; --fg: #f2f2f5; --muted: #b0b0bd; --card: #26262e;
+      --border: #35353f; --accent: #62a0ea; --accent-fg: #10131a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.8 system-ui, -apple-system, "Segoe UI", "Noto Kufi Arabic", "Noto Sans Arabic", Roboto, sans-serif;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+  header { text-align: center; padding: 72px 20px 40px; }
+  header h1 { font-size: 3rem; margin: 0 0 8px; }
+  header p.tag { font-size: 1.3rem; color: var(--muted); margin: 0 auto 28px; max-width: 640px; }
+  .btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 12px 22px; border-radius: 10px;
+    text-decoration: none; font-weight: 600; border: 1px solid var(--border);
+  }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin: 8px 0 40px; }
+  .step { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .step b { display: block; font-size: 1.05rem; margin-bottom: 4px; }
+  .step span { color: var(--muted); font-size: 0.92rem; }
+  h2 { font-size: 1.7rem; margin: 48px 0 16px; }
+  .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .shots figure { margin: 0; }
+  .shots img { width: 100%; border-radius: 12px; border: 1px solid var(--border); display: block; }
+  .shots figcaption { color: var(--muted); font-size: 0.9rem; margin-top: 6px; text-align: center; }
+  pre {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px; overflow-x: auto; font-size: 0.9rem; direction: ltr; text-align: left;
+  }
+  ul.feat { columns: 2; column-gap: 32px; padding-right: 20px; padding-left: 0; }
+  @media (max-width: 560px) { ul.feat { columns: 1; } header h1 { font-size: 2.2rem; } }
+  footer { text-align: center; color: var(--muted); padding: 48px 20px; border-top: 1px solid var(--border); margin-top: 56px; font-size: 0.9rem; }
+  .lang-switch { position: absolute; top: 16px; inset-inline-end: 20px; font-size: 0.95rem; }
+</style>
+</head>
+<body>
+<a class="lang-switch" href="index.html" lang="en" dir="ltr">English</a>
+<header>
+  <div class="wrap">
+    <h1>SysMedic 🩺</h1>
+    <p class="tag">طبيب لنظام لينكس — يفحص، ويشخّص، ويشرح بلغة بسيطة،
+      ويصف إصلاحات آمنة، ثم يتابع الحالة.</p>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/abosalehg-ui/SysMedic/releases">تنزيل</a>
+      <a class="btn" href="https://github.com/abosalehg-ui/SysMedic">المصدر على GitHub</a>
+      <a class="btn" href="https://github.com/abosalehg-ui/SysMedic/blob/main/INSTALL.md">دليل التثبيت</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="steps">
+    <div class="step"><b>الفحص</b><span>درجة صحية من 0 إلى 100 لنظامك كاملاً.</span></div>
+    <div class="step"><b>التشخيص</b><span>27 قاعدة تكتشف المشاكل الحقيقية.</span></div>
+    <div class="step"><b>الشرح</b><span>بالعربية والإنجليزية، دون إنترنت.</span></div>
+    <div class="step"><b>الوصفة</b><span>إصلاحات آمنة قابلة للتراجع عبر polkit.</span></div>
+    <div class="step"><b>المتابعة</b><span>فحوص مجدولة وتنبيهات.</span></div>
+  </div>
+
+  <h2>شاهده</h2>
+  <div class="shots">
+    <figure>
+      <img src="screenshots/dashboard-ar.png" alt="لوحة الدرجة الصحية بالعربية">
+      <figcaption>الدرجة الصحية وأشرطة الفئات</figcaption>
+    </figure>
+    <figure>
+      <img src="screenshots/findings-fix.png" alt="قائمة النتائج مع زر تطبيق الإصلاح">
+      <figcaption>النتائج مع إصلاح بنقرة واحدة</figcaption>
+    </figure>
+    <figure>
+      <img src="screenshots/fix-confirm.png" alt="حوار تأكيد الإصلاح">
+      <figcaption>كل إصلاح يُعاين قبل تنفيذه</figcaption>
+    </figure>
+    <figure>
+      <img src="screenshots/disk-treemap.png" alt="خريطة شجرية لاستخدام القرص">
+      <figcaption>خريطة استخدام القرص</figcaption>
+    </figure>
+  </div>
+
+  <h2>لماذا SysMedic؟</h2>
+  <p>كل الأدوات الموجودة إمّا مراقب (htop وbtop وMission Center) أو منظّف
+     (BleachBit وStacer) أو أداة خبراء في الطرفية (systemd-analyze وsmartctl).
+     <b>لا أحد يشخّص ويشرح ويصلح بأمان.</b> يقوم SysMedic بخطوات زيارة الطبيب
+     الخمس — ولا يعمل كـ root أبداً: الإصلاحات المميّزة تمر عبر مساعد مُصرَّح
+     له من polkit يقبل معرّف الإصلاح فقط ويعيد بناء الخطة بنفسه، فلا يمكن حقن
+     أي أمر.</p>
+
+  <p>واجهة التطبيق والفئات والتقدير والعلاجات وحوار تأكيد الإصلاح مترجمة
+     للعربية؛ عناوين النتائج ما تزال بالإنجليزية حتى اكتمال الانتقال إلى
+     gettext.</p>
+
+  <ul class="feat">
+    <li>درجة صحية موزونة من 0 إلى 100</li>
+    <li>المعالج والذاكرة والأقراص والحرارة والبطارية</li>
+    <li>صحة الأقراص SMART وتآكل SSD</li>
+    <li>الخدمات والعمليات وتحليل الإقلاع</li>
+    <li>تدقيق أمني: الجدار الناري وSSH والمنافذ المكشوفة</li>
+    <li>شروحات ثنائية اللغة دون إنترنت (ar/en)</li>
+    <li>إصلاحات آمنة مع معاينة وتراجع</li>
+    <li>محلّل خريطة استخدام القرص</li>
+    <li>فحوص مجدولة وتنبيهات سطح المكتب</li>
+    <li>تقارير HTML / Markdown / JSON / PDF</li>
+    <li>شرح معمّق اختياري بالذكاء الاصطناعي (بمفتاحك الخاص)</li>
+    <li>GTK4/libadwaita — داكن/فاتح تلقائياً</li>
+  </ul>
+
+  <h2>جرّب سطر الأوامر</h2>
+  <pre>sudo apt install ./sysmedic_*.deb
+
+sysmedic checkup                       # تقرير ملوّن من 0 إلى 100
+sysmedic explain storage.disk_nearly_full --lang ar
+sysmedic explain storage.disk_nearly_full --deep   # اختياري: ذكاء اصطناعي
+sysmedic fix fix.apt_clean --dry-run   # معاينة إصلاح آمن
+sysmedic disk ~                        # أكبر المجلدات
+sysmedic schedule daily                # فحوص متابعة مجدولة</pre>
+</main>
+
+<footer>
+  <div class="wrap">
+    SysMedic · GPL-3.0-or-later · صنعه ويصونه
+    <a href="https://github.com/abosalehg-ui">abosalehg-ui</a> ·
+    <a href="https://github.com/abosalehg-ui/SysMedic/issues">أبلغ عن مشكلة</a>
+  </div>
+</footer>
+</body>
+</html>

@@ -17,7 +17,9 @@ another monitor: the app you install first on a fresh Ubuntu.
 The confirmation dialog is the heart of the *prescribe* step: before anything
 changes you see exactly what will run, which paths it touches, its risk, and
 whether it can be undone. The Disk Usage page renders a squarified treemap of
-the folders eating your space. *(Also available in Arabic / RTL.)*
+the folders eating your space. *(UI chrome, categories, grades, remedies and
+the fix-consent dialog are localized to Arabic; finding titles are still
+English until the gettext migration lands.)*
 
 ```
   Health score: 97/100  (Excellent)
@@ -42,7 +44,7 @@ of a doctor's visit:
 | Step | What you get |
 |---|---|
 | **Checkup** | One command scans CPU, RAM, swap, disks, thermal, battery, services, processes, boot, logs, packages, network and security → a 0–100 health score |
-| **Diagnose** | 21+ rules: slow boot, full disks, zombie processes, overheating, failed services, broken/old packages, huge logs, snap bloat, DNS issues, SSH root login, inactive firewall... |
+| **Diagnose** | 27 rules: slow boot, full disks, zombie processes, overheating, failed services, broken/old packages, huge logs, snap bloat, DNS issues, SSH root login, inactive firewall... |
 | **Explain** | Every finding answers, offline and in English + العربية: what caused it? is it dangerous? what's the impact? how do I fix it? what if I ignore it? |
 | **Prescribe** | One-click safe fixes with a mandatory preview (what runs, which files change, is it reversible) and undo, authorized via polkit — the app never runs as root |
 | **Follow-up** | Scheduled checkups, proactive notifications and a health-score trend |
@@ -174,6 +176,8 @@ Created and maintained by **abosalehg-ui**.
 المشاكل (بطء الإقلاع، امتلاء القرص، ارتفاع الحرارة، الخدمات المتعطلة، الحزم
 المكسورة...)، ويشرح كل مشكلة بالعربية دون إنترنت: ما سببها؟ هل هي خطيرة؟ ما
 تأثيرها؟ كيف تُصلح؟ وما خطر تجاهلها؟ — مع إصلاحات آمنة قابلة للمعاينة
-والتراجع تعمل عبر polkit، وواجهة GNOME حديثة (GTK4/libadwaita) بدعم كامل
-للعربية وواجهة RTL، وأدوات متقدّمة: محلّل القرص، فحص الشبكة، الجدولة،
+والتراجع تعمل عبر polkit، وواجهة GNOME حديثة (GTK4/libadwaita) مترجمة
+للعربية (واجهة التطبيق والفئات والتقدير والعلاجات وحوار تأكيد الإصلاح؛
+عناوين النتائج ما تزال بالإنجليزية حتى اكتمال الانتقال إلى gettext)،
+وأدوات متقدّمة: محلّل القرص، فحص الشبكة، الجدولة،
 والإشعارات، وتصدير التقارير (HTML/PDF).

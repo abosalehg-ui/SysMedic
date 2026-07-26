@@ -6,6 +6,43 @@ All notable changes to SysMedic are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- polkit: `allow_active` is `auth_admin` (was `auth_admin_keep`) — a cached
+  authorization let any session process silently re-invoke the fix helper
+  (e.g. `undo` right after enabling the firewall) for ~5 minutes.
+- CI/supply chain: least-privilege `GITHUB_TOKEN`, every GitHub Action pinned
+  to a commit SHA, and a `cargo audit` (RUSTSEC) gate on `Cargo.lock`.
+- `notify-send` gets `--` before dynamic text; C0/C1 control characters are
+  stripped from finding titles/evidence and LLM output before terminal
+  rendering; PDF converters no longer run with `--no-sandbox`; reports and
+  history are written `0600`; the scheduled systemd user unit is sandboxed
+  (`NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=full`).
+
+### Changed
+- **Parallel checkup** — collectors run on scoped threads; the checkup now
+  takes about as long as its slowest tool instead of the sum of ~16 of them.
+- **Arabic** — category labels, grades, severity badges, the CLI report
+  chrome, the HTML report (including `lang="ar"`) and, most importantly, the
+  fix-confirmation preview are now localized; `Lang` moved into
+  `sysmedic-core`.
+- **GUI** — adaptive narrow-width layout (`adw::Breakpoint` +
+  `ViewSwitcherBar`), toast feedback while and after a fix runs, destructive
+  styling for irreversible fixes, a monospace start-aligned consent preview,
+  local-time timestamps, LevelBar color offsets, F5/Ctrl+R refresh, disk-scan
+  error/empty states, a curated treemap palette with contrast-aware labels
+  and an accessible list view of the same data.
+- **CLI** — every command honors `NO_COLOR` and pipes (not just `checkup`);
+  checkup output prints each finding's id so `sysmedic explain` is
+  discoverable.
+- Thresholds for boot, journal, battery, SMART and packages are centralized
+  in `sysmedic_core::thresholds` and shared with fix applicability; engine
+  construction has a single composition root
+  (`sysmedic_diagnostics::default_engine`).
+- The `sysmedic-daemon` crate is renamed `sysmedic-fix-helper` to match what
+  it actually is; typed errors (`FixError`/`JournalError`/`HistoryError`)
+  replace stringly errors; systemd durations with day/week units parse; the
+  Flatpak unused-runtime check matches refs exactly.
+
 ### Added
 - **Optional LLM deep explanations** — `sysmedic explain <id> --deep` asks Claude
   for a context-aware explanation on top of the offline knowledge base. Strictly
@@ -26,9 +63,9 @@ All notable changes to SysMedic are documented here. The format follows
 The full doctor's visit: **checkup → diagnose → explain → prescribe → follow-up.**
 
 ### Added
-- **Engine & CLI (M1)** — weighted 0–100 health score; 15 collectors (CPU, memory,
+- **Engine & CLI (M1)** — weighted 0–100 health score; 16 collectors (CPU, memory,
   disks, thermal, processes, services, packages, boot, logs, network, security,
-  battery, snap, flatpak, SMART, ports); 21+ diagnostic rules with stable ids;
+  battery, snap, flatpak, SMART, ports); 27 diagnostic rules with stable ids;
   bilingual (en/ar) offline knowledge base; `checkup` (text/json/markdown/html),
   `checks`, `explain`.
 - **Desktop app (M2)** — GTK4/libadwaita GUI (MVVM), automatic dark/light, Arabic
