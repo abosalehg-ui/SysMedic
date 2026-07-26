@@ -105,17 +105,38 @@ pub fn build_window(app: &adw::Application) {
         .build();
     header.set_title_widget(Some(&switcher));
 
+    // A bottom switcher bar that a narrow-width breakpoint reveals (the wide
+    // in-header switcher truncates instead of adapting on small windows).
+    let switcher_bar = adw::ViewSwitcherBar::builder().stack(&stack).build();
+
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(&header);
     toolbar_view.set_content(Some(&stack));
+    toolbar_view.add_bottom_bar(&switcher_bar);
+
+    // Toasts confirm fix outcomes without interrupting the flow.
+    let toasts = adw::ToastOverlay::new();
+    toasts.set_child(Some(&toolbar_view));
 
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("SysMedic")
         .default_width(780)
         .default_height(860)
-        .content(&toolbar_view)
+        .width_request(360)
+        .height_request(400)
+        .content(&toasts)
         .build();
+
+    let breakpoint =
+        adw::Breakpoint::new(adw::BreakpointCondition::parse("max-width: 550sp").unwrap());
+    breakpoint.add_setter(&switcher_bar, "reveal", Some(&true.to_value()));
+    breakpoint.add_setter(
+        &header,
+        "title-widget",
+        Some(&None::<gtk::Widget>.to_value()),
+    );
+    window.add_breakpoint(breakpoint);
 
     // Wire the "app.about" action to show the About dialog.
     let about_action = gio::SimpleAction::new("about", None);
@@ -125,6 +146,11 @@ pub fn build_window(app: &adw::Application) {
     });
     app.add_action(&about_action);
 
+    // F5 / Ctrl+R re-run the checkup from the keyboard.
+    let refresh_action = gio::SimpleAction::new("refresh", None);
+    app.add_action(&refresh_action);
+    app.set_accels_for_action("app.refresh", &["F5", "<Ctrl>r"]);
+
     // `run_checkup` needs to reference itself so a finished fix can trigger a
     // re-scan. A shared cell breaks the chicken-and-egg of the self-reference.
     let self_ref: Rc<RefCell<Option<RefreshFn>>> = Rc::new(RefCell::new(None));
@@ -133,6 +159,7 @@ pub fn build_window(app: &adw::Application) {
         let spinner = spinner.clone();
         let refresh = refresh.clone();
         let window = window.clone();
+        let toasts = toasts.clone();
         let self_ref = self_ref.clone();
         move || {
             spinner.start();
@@ -147,6 +174,7 @@ pub fn build_window(app: &adw::Application) {
             let spinner = spinner.clone();
             let refresh = refresh.clone();
             let window = window.clone();
+            let toasts = toasts.clone();
             let on_changed = self_ref.borrow().clone();
             glib::spawn_future_local(async move {
                 let result = gtk::gio::spawn_blocking(run_engine).await;
@@ -155,7 +183,9 @@ pub fn build_window(app: &adw::Application) {
                 match result {
                     Ok(report) => {
                         let refresh_cb = on_changed.unwrap_or_else(|| Rc::new(|| {}));
-                        clamp.set_child(Some(&report_view(&report, lang, &window, refresh_cb)));
+                        clamp.set_child(Some(&report_view(
+                            &report, lang, &window, &toasts, refresh_cb,
+                        )));
                     }
                     Err(_) => clamp.set_child(Some(
                         &adw::StatusPage::builder()
@@ -172,6 +202,10 @@ pub fn build_window(app: &adw::Application) {
     refresh.connect_clicked({
         let run_checkup = run_checkup.clone();
         move |_| run_checkup()
+    });
+    refresh_action.connect_activate({
+        let run_checkup = run_checkup.clone();
+        move |_, _| run_checkup()
     });
     run_checkup();
 
@@ -203,6 +237,7 @@ fn confirm_and_apply(
     window: &adw::ApplicationWindow,
     lang: Lang,
     plan: &FixPlan,
+    toasts: &adw::ToastOverlay,
     on_changed: RefreshFn,
 ) {
     let strings = Strings::for_lang(lang);
@@ -211,19 +246,36 @@ fn confirm_and_apply(
     } else {
         strings.reversible_no
     };
-    let dialog = adw::AlertDialog::new(Some(strings.confirm_fix_title), None);
-    dialog.set_body(&format!("{}\n\n{}", plan.preview_in(lang), reversibility));
+    let dialog = adw::AlertDialog::new(Some(strings.confirm_fix_title), Some(reversibility));
+    // The preview (commands, paths, risk) as a start-aligned monospace block —
+    // centered proportional text made command lines hard to scan.
+    let preview = gtk::Label::new(Some(&plan.preview_in(lang)));
+    preview.set_xalign(0.0);
+    preview.set_wrap(true);
+    preview.add_css_class("monospace");
+    preview.set_selectable(true);
+    dialog.set_extra_child(Some(&preview));
     dialog.add_response("cancel", strings.cancel);
     dialog.add_response("apply", strings.apply);
-    dialog.set_response_appearance("apply", adw::ResponseAppearance::Suggested);
+    // An irreversible privileged change earns the destructive (red) style,
+    // not the encouraging blue "suggested" one.
+    dialog.set_response_appearance(
+        "apply",
+        if plan.reversible {
+            adw::ResponseAppearance::Suggested
+        } else {
+            adw::ResponseAppearance::Destructive
+        },
+    );
     dialog.set_default_response(Some("cancel"));
     dialog.set_close_response("cancel");
 
     let fix_id = plan.id.clone();
     let window = window.clone();
-    // A separate handle for the response callback, so `window` above stays
+    // Separate handles for the response callback, so the originals stay
     // available for `dialog.present` at the end of this function.
     let cb_window = window.clone();
+    let toasts = toasts.clone();
     dialog.connect_response(None, move |_, response| {
         if response != "apply" {
             return;
@@ -231,6 +283,11 @@ fn confirm_and_apply(
         let fix_id = fix_id.clone();
         let on_changed = on_changed.clone();
         let window = cb_window.clone();
+        let toasts = toasts.clone();
+        // Busy feedback while pkexec prompts and the helper runs.
+        let running = adw::Toast::new(strings.fix_running);
+        running.set_timeout(0); // stays until dismissed below
+        toasts.add_toast(running.clone());
         glib::spawn_future_local(async move {
             let helper = helper_path();
             let id = fix_id.clone();
@@ -246,7 +303,12 @@ fn confirm_and_apply(
             })
             .await
             .unwrap_or(false);
-            if !succeeded {
+            running.dismiss();
+            if succeeded {
+                // Say it worked — a silent re-scan left users guessing whether
+                // the fix ran or the score just changed.
+                toasts.add_toast(adw::Toast::new(strings.fix_applied));
+            } else {
                 // Tell the user why nothing changed instead of a silent re-scan
                 // (auth cancelled, fix failed, or the helper isn't installed).
                 let error = adw::AlertDialog::new(
@@ -266,6 +328,7 @@ fn report_view(
     report: &HealthReport,
     lang: Lang,
     window: &adw::ApplicationWindow,
+    toasts: &adw::ToastOverlay,
     on_changed: RefreshFn,
 ) -> gtk::Box {
     let strings = Strings::for_lang(lang);
@@ -281,7 +344,7 @@ fn report_view(
         report.score
     )));
     grade.add_css_class("title-2");
-    let generated = gtk::Label::new(Some(&report.generated_at));
+    let generated = gtk::Label::new(Some(&local_timestamp(&report.generated_at)));
     generated.add_css_class("dim-label");
     generated.add_css_class("caption");
     let hero_title = gtk::Label::new(Some(strings.health_score));
@@ -299,6 +362,7 @@ fn report_view(
             .unwrap_or_default();
         let history = gtk::Label::new(Some(&format!("{spark}{trend}")));
         history.add_css_class("dim-label");
+        history.add_css_class("monospace");
         history.set_tooltip_text(Some(strings.history_tooltip));
         root.append(&history);
     }
@@ -309,6 +373,11 @@ fn report_view(
     for row in viewmodel::category_rows(report, lang) {
         let action_row = adw::ActionRow::builder().title(row.label).build();
         let bar = gtk::LevelBar::for_interval(0.0, 100.0);
+        // Offsets give low scores a color signal — without them 76 and 100
+        // render identically.
+        bar.add_offset_value(gtk::LEVEL_BAR_OFFSET_LOW, 50.0);
+        bar.add_offset_value(gtk::LEVEL_BAR_OFFSET_HIGH, 75.0);
+        bar.add_offset_value(gtk::LEVEL_BAR_OFFSET_FULL, 100.0);
         bar.set_value(row.score as f64);
         bar.set_width_request(160);
         bar.set_valign(gtk::Align::Center);
@@ -359,9 +428,10 @@ fn report_view(
             button.add_css_class("suggested-action");
             button.set_valign(gtk::Align::Center);
             let window = window.clone();
+            let toasts = toasts.clone();
             let on_changed = on_changed.clone();
             button.connect_clicked(move |_| {
-                confirm_and_apply(&window, lang, &plan, on_changed.clone());
+                confirm_and_apply(&window, lang, &plan, &toasts, on_changed.clone());
             });
             row.add_suffix(&button);
         }
@@ -385,6 +455,17 @@ fn report_view(
     }
 
     root
+}
+
+/// Render an RFC3339 UTC timestamp in the user's local time and locale
+/// (falling back to the raw string if it doesn't parse).
+fn local_timestamp(rfc3339: &str) -> String {
+    glib::DateTime::from_iso8601(rfc3339, None)
+        .ok()
+        .and_then(|dt| dt.to_local().ok())
+        .and_then(|dt| dt.format("%x %X").ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| rfc3339.to_string())
 }
 
 fn boxed_list() -> gtk::ListBox {
