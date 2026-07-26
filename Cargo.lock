@@ -1197,6 +1197,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sysmedic-core",
  "sysmedic-diagnostics",
  "ureq",
 ]

@@ -86,6 +86,23 @@ pub fn grade_for(score: u8) -> &'static str {
     }
 }
 
+/// The grade as user-facing text in the requested language. `HealthReport`
+/// keeps the English value (it is serialized and effectively an identifier);
+/// display layers call this with the score instead of printing `grade` raw.
+pub fn grade_label_in(score: u8, lang: crate::lang::Lang) -> &'static str {
+    use crate::lang::Lang;
+    match lang {
+        Lang::En => grade_for(score),
+        Lang::Ar => match score {
+            90..=100 => "ممتازة",
+            75..=89 => "جيدة",
+            60..=74 => "مقبولة",
+            40..=59 => "ضعيفة",
+            _ => "حرجة",
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

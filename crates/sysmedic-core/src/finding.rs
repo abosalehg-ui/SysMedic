@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::lang::Lang;
+
 /// How serious a finding is. Ordering matters: `Critical > High > ... > Info`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -23,6 +25,7 @@ impl Severity {
         }
     }
 
+    /// Stable machine-facing label (also used as a CSS class); always English.
     pub fn label(self) -> &'static str {
         match self {
             Severity::Info => "info",
@@ -30,6 +33,20 @@ impl Severity {
             Severity::Medium => "medium",
             Severity::High => "high",
             Severity::Critical => "critical",
+        }
+    }
+
+    /// User-facing label in the requested language.
+    pub fn label_in(self, lang: Lang) -> &'static str {
+        match lang {
+            Lang::En => self.label(),
+            Lang::Ar => match self {
+                Severity::Info => "معلومة",
+                Severity::Low => "منخفضة",
+                Severity::Medium => "متوسطة",
+                Severity::High => "عالية",
+                Severity::Critical => "حرجة",
+            },
         }
     }
 }
@@ -94,6 +111,28 @@ impl Category {
             Category::Network => "Network",
             Category::Security => "Security",
             Category::Battery => "Battery",
+        }
+    }
+
+    /// User-facing label in the requested language. The dashboard and reports
+    /// advertise Arabic; category names are part of the content, not chrome.
+    pub fn label_in(self, lang: Lang) -> &'static str {
+        match lang {
+            Lang::En => self.label(),
+            Lang::Ar => match self {
+                Category::Boot => "الإقلاع",
+                Category::Cpu => "المعالج",
+                Category::Memory => "الذاكرة",
+                Category::Storage => "التخزين",
+                Category::Thermal => "الحرارة",
+                Category::Processes => "العمليات",
+                Category::Services => "الخدمات",
+                Category::Packages => "الحزم",
+                Category::Logs => "السجلات",
+                Category::Network => "الشبكة",
+                Category::Security => "الأمان",
+                Category::Battery => "البطارية",
+            },
         }
     }
 }

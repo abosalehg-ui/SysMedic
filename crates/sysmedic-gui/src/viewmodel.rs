@@ -120,12 +120,12 @@ pub struct CategoryRow {
     pub score: u8,
 }
 
-pub fn category_rows(report: &HealthReport) -> Vec<CategoryRow> {
+pub fn category_rows(report: &HealthReport, lang: Lang) -> Vec<CategoryRow> {
     report
         .category_scores
         .iter()
         .map(|cs| CategoryRow {
-            label: cs.category.label(),
+            label: cs.category.label_in(lang),
             score: cs.score,
         })
         .collect()
@@ -184,7 +184,13 @@ mod tests {
     #[test]
     fn category_rows_cover_all_categories() {
         let report = HealthReport::build(Snapshot::default(), vec![]);
-        assert_eq!(category_rows(&report).len(), report.category_scores.len());
+        assert_eq!(
+            category_rows(&report, Lang::En).len(),
+            report.category_scores.len()
+        );
+        // Arabic rows carry Arabic labels, not the English fallback.
+        let ar = category_rows(&report, Lang::Ar);
+        assert!(ar.iter().any(|r| r.label == "التخزين"));
     }
 
     #[test]

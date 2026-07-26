@@ -146,7 +146,10 @@ pub fn to_markdown(report: &HealthReport, lang: Lang) -> String {
 
 pub fn to_html(report: &HealthReport, lang: Lang) -> String {
     let l = labels(lang);
-    let dir = if lang == Lang::Ar { "rtl" } else { "ltr" };
+    let (dir, lang_code) = match lang {
+        Lang::Ar => ("rtl", "ar"),
+        Lang::En => ("ltr", "en"),
+    };
     let mut findings_html = String::new();
     for f in &report.findings {
         let explanation = explain(&f.id, lang)
@@ -175,9 +178,10 @@ pub fn to_html(report: &HealthReport, lang: Lang) -> String {
         };
         let _ = write!(
             findings_html,
-            "<article class=\"sev-{sev}\"><h3><span class=\"badge\">{sev}</span> {title}</h3>\
+            "<article class=\"sev-{sev}\"><h3><span class=\"badge\">{badge}</span> {title}</h3>\
              <p>{summary}</p>{explanation}{evidence}</article>",
             sev = f.severity.label(),
+            badge = esc(f.severity.label_in(lang)),
             title = esc(&f.title),
             summary = esc(&f.summary),
         );
@@ -188,7 +192,7 @@ pub fn to_html(report: &HealthReport, lang: Lang) -> String {
         .map(|cs| {
             format!(
                 "<div class=\"cat\"><span>{}</span><div class=\"bar\"><div style=\"width:{}%\"></div></div><b>{}</b></div>",
-                cs.category.label(),
+                esc(cs.category.label_in(lang)),
                 cs.score,
                 cs.score
             )
@@ -196,7 +200,7 @@ pub fn to_html(report: &HealthReport, lang: Lang) -> String {
         .collect();
     format!(
         r#"<!DOCTYPE html>
-<html dir="{dir}"><head><meta charset="utf-8"><title>{report_title}</title><style>
+<html dir="{dir}" lang="{lang_code}"><head><meta charset="utf-8"><title>{report_title}</title><style>
 :root {{ color-scheme: light dark; font-family: system-ui, sans-serif; }}
 body {{ max-width: 860px; margin: 2rem auto; padding: 0 1rem; }}
 .score {{ font-size: 3rem; font-weight: 700; }}
@@ -207,7 +211,9 @@ article {{ border: 1px solid rgba(128,128,128,.35); border-radius: 10px; padding
 .badge {{ font-size: .7rem; text-transform: uppercase; padding: .15rem .5rem; border-radius: 999px; background: rgba(128,128,128,.25); }}
 .sev-critical .badge {{ background: #c01c28; color: #fff; }}
 .sev-high .badge {{ background: #e66100; color: #fff; }}
-.sev-medium .badge {{ background: #e5a50a; }}
+/* Explicit dark text: under `color-scheme: light dark` the inherited color is
+   near-white in dark mode, which fails contrast on the amber background. */
+.sev-medium .badge {{ background: #e5a50a; color: #241f31; }}
 pre {{ overflow-x: auto; background: rgba(128,128,128,.15); padding: .6rem; border-radius: 8px; }}
 </style></head><body>
 <h1>{report_title}</h1>
@@ -222,7 +228,7 @@ pre {{ overflow-x: auto; background: rgba(128,128,128,.15); padding: .6rem; bord
         categories_label = esc(l.categories),
         findings_label = esc(l.findings),
         score = report.score,
-        grade = report.grade,
+        grade = sysmedic_core::score::grade_label_in(report.score, lang),
         count = report.findings.len(),
         findings = findings_html,
     )

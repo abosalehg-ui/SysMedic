@@ -14,22 +14,9 @@ use serde::Deserialize;
 pub mod llm;
 pub use llm::{HttpTransport, LlmExplainer, DEFAULT_MODEL};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Lang {
-    En,
-    Ar,
-}
-
-impl Lang {
-    /// Pick a language from a POSIX locale string (`LANG`/`LC_ALL`).
-    pub fn from_locale(locale: &str) -> Lang {
-        if locale.starts_with("ar") {
-            Lang::Ar
-        } else {
-            Lang::En
-        }
-    }
-}
+// The language enum lives in the core so the domain model (categories, grades,
+// fix previews) and the knowledge base agree on one type.
+pub use sysmedic_core::Lang;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Explanation {

@@ -215,7 +215,7 @@ fn confirm_and_apply(
         strings.reversible_no
     };
     let dialog = adw::AlertDialog::new(Some(strings.confirm_fix_title), None);
-    dialog.set_body(&format!("{}\n\n{}", plan.preview(), reversibility));
+    dialog.set_body(&format!("{}\n\n{}", plan.preview_in(lang), reversibility));
     dialog.add_response("cancel", strings.cancel);
     dialog.add_response("apply", strings.apply);
     dialog.set_response_appearance("apply", adw::ResponseAppearance::Suggested);
@@ -278,7 +278,11 @@ fn report_view(
     let score = gtk::Label::new(Some(&format!("{}", report.score)));
     score.add_css_class("score-title");
     score.add_css_class(viewmodel::score_css(report.score));
-    let grade = gtk::Label::new(Some(&format!("{} · {}/100", report.grade, report.score)));
+    let grade = gtk::Label::new(Some(&format!(
+        "{} · {}/100",
+        sysmedic_core::score::grade_label_in(report.score, lang),
+        report.score
+    )));
     grade.add_css_class("title-2");
     let generated = gtk::Label::new(Some(&report.generated_at));
     generated.add_css_class("dim-label");
@@ -305,7 +309,7 @@ fn report_view(
     // Category scores.
     root.append(&section_label(strings.categories));
     let categories = boxed_list();
-    for row in viewmodel::category_rows(report) {
+    for row in viewmodel::category_rows(report, lang) {
         let action_row = adw::ActionRow::builder().title(row.label).build();
         let bar = gtk::LevelBar::for_interval(0.0, 100.0);
         bar.set_value(row.score as f64);

@@ -6,10 +6,52 @@ use owo_colors::OwoColorize;
 use sysmedic_core::{HealthReport, Severity};
 use sysmedic_knowledge::{explain, Lang};
 
+/// Localized chrome for the terminal report. Finding bodies come from the
+/// rules (English for now) and remedies from the bilingual knowledge base;
+/// this keeps the surrounding labels in the same language as the remedies.
+struct Chrome {
+    health_score: &'static str,
+    healthy: &'static str,
+    findings_intro_prefix: &'static str,
+    findings_intro_suffix: &'static str,
+    remedy: &'static str,
+    try_: &'static str,
+    skipped: &'static str,
+}
+
+fn chrome(lang: Lang) -> Chrome {
+    match lang {
+        Lang::En => Chrome {
+            health_score: "Health score",
+            healthy: "No problems found — the system looks healthy.",
+            findings_intro_prefix: "",
+            findings_intro_suffix: " finding(s), most severe first:",
+            remedy: "Remedy:",
+            try_: "Try:",
+            skipped: "Skipped checks:",
+        },
+        Lang::Ar => Chrome {
+            health_score: "الدرجة الصحية",
+            healthy: "لا توجد مشاكل — النظام يبدو سليماً.",
+            findings_intro_prefix: "عدد النتائج: ",
+            findings_intro_suffix: "، الأخطر أولاً:",
+            remedy: "العلاج:",
+            try_: "جرّب:",
+            skipped: "فحوص متخطاة:",
+        },
+    }
+}
+
 pub fn render(report: &HealthReport, lang: Lang) -> String {
     let mut out = String::new();
+    let c = chrome(lang);
 
-    let score_line = format!("  Health score: {}/100  ({})", report.score, report.grade);
+    let score_line = format!(
+        "  {}: {}/100  ({})",
+        c.health_score,
+        report.score,
+        sysmedic_core::score::grade_label_in(report.score, lang)
+    );
     let _ = writeln!(out);
     let _ = writeln!(
         out,
@@ -25,21 +67,25 @@ pub fn render(report: &HealthReport, lang: Lang) -> String {
     for cs in &report.category_scores {
         let filled = (cs.score as usize) / 10;
         let bar: String = "█".repeat(filled) + &"░".repeat(10 - filled);
-        let _ = writeln!(out, "  {:<10} {} {:>3}", cs.category.label(), bar, cs.score);
+        let _ = writeln!(
+            out,
+            "  {:<10} {} {:>3}",
+            cs.category.label_in(lang),
+            bar,
+            cs.score
+        );
     }
     let _ = writeln!(out);
 
     if report.findings.is_empty() {
-        let _ = writeln!(
-            out,
-            "  {}",
-            "No problems found — the system looks healthy.".green()
-        );
+        let _ = writeln!(out, "  {}", c.healthy.green());
     } else {
         let _ = writeln!(
             out,
-            "  {} finding(s), most severe first:",
-            report.findings.len()
+            "  {}{}{}",
+            c.findings_intro_prefix,
+            report.findings.len(),
+            c.findings_intro_suffix
         );
         let _ = writeln!(out);
     }
@@ -55,19 +101,19 @@ pub fn render(report: &HealthReport, lang: Lang) -> String {
         let _ = writeln!(out, "      {}", sanitize(&f.summary));
         let _ = writeln!(out, "      {}", format!("id: {}", f.id).dimmed());
         if let Some(exp) = explain(&f.id, lang) {
-            let _ = writeln!(out, "      {} {}", "Remedy:".cyan(), exp.remedy);
+            let _ = writeln!(out, "      {} {}", c.remedy.cyan(), exp.remedy);
         }
         for e in f.evidence.iter().take(5) {
             let _ = writeln!(out, "        - {}", sanitize(e).dimmed());
         }
         if let Some(hint) = &f.fix_hint {
-            let _ = writeln!(out, "      {} {}", "Try:".cyan(), sanitize(hint).italic());
+            let _ = writeln!(out, "      {} {}", c.try_.cyan(), sanitize(hint).italic());
         }
         let _ = writeln!(out);
     }
 
     if !report.snapshot.collection_errors.is_empty() {
-        let _ = writeln!(out, "  {}", "Skipped checks:".dimmed());
+        let _ = writeln!(out, "  {}", c.skipped.dimmed());
         for e in &report.snapshot.collection_errors {
             let _ = writeln!(out, "    - {}", e.dimmed());
         }

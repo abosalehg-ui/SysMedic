@@ -9,7 +9,7 @@ use std::process::Command;
 
 use anyhow::{bail, Result};
 use owo_colors::OwoColorize;
-use sysmedic_core::Snapshot;
+use sysmedic_core::{Lang, Snapshot};
 use sysmedic_fixes::{self as fixes, Journal, RealRunner};
 
 const DEFAULT_HELPER: &str = "/usr/libexec/sysmedic-fix-helper";
@@ -52,7 +52,9 @@ pub fn apply(id: &str, dry_run: bool, yes: bool) -> Result<()> {
         bail!("fix '{id}' is unknown or not applicable right now (see `sysmedic fix`)");
     };
 
-    println!("{}", plan.preview());
+    // The consent preview follows the user's locale, like the knowledge base.
+    let lang = Lang::from_locale(&std::env::var("LANG").unwrap_or_default());
+    println!("{}", plan.preview_in(lang));
 
     if dry_run {
         println!("{}", "(dry run — nothing was changed)".dimmed());
