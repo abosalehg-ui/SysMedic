@@ -166,6 +166,10 @@ pub struct PackageInfo {
     /// Size of the APT download cache (apt systems only — gates the
     /// apt-specific `fix.apt_clean`).
     pub apt_cache_bytes: Option<u64>,
+    /// Size of /var/cache/pacman/pkg (pacman systems only). pacman keeps
+    /// every downloaded package version until the cache is cleaned.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pacman_cache_bytes: Option<u64>,
     pub upgradable: Option<u32>,
     pub security_upgrades: Option<u32>,
 }

@@ -33,7 +33,14 @@ jobs:
           mkdir -p _site/screenshots
           cp docs/site/*.html _site/
           cp docs/screenshots/*.png _site/screenshots/
+      # `enablement: true` asks the action to switch Pages on for the repo if
+      # it isn't already (the deploy failed with "Get Pages site failed" while
+      # Pages was disabled in the repository settings). If the token lacks the
+      # rights to do so, enable it once by hand: Settings → Pages → Source:
+      # GitHub Actions.
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: _site

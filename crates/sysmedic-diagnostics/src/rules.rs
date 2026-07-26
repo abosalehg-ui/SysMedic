@@ -263,6 +263,14 @@ pub mod packages {
         }
     }
 
+    /// The security-update command per package manager.
+    fn security_hint(manager: Option<&str>) -> &'static str {
+        match manager {
+            Some("dnf") => "sudo dnf upgrade --security",
+            _ => "sudo apt update && sudo apt upgrade",
+        }
+    }
+
     /// The broken-package repair command per package manager.
     fn repair_hint(manager: Option<&str>) -> &'static str {
         match manager {
@@ -331,6 +339,27 @@ pub mod packages {
         .with_args(vec![format!("{:.1}", gb(bytes))])]
     }
 
+    pub fn pacman_cache_large(s: &Snapshot) -> Vec<Finding> {
+        let Some(pkgs) = &s.packages else {
+            return vec![];
+        };
+        let Some(bytes) = pkgs.pacman_cache_bytes else {
+            return vec![];
+        };
+        if bytes < thresholds::packages::PACMAN_CACHE_LARGE_BYTES {
+            return vec![];
+        }
+        vec![Finding::new(
+            "packages.pacman_cache_large",
+            Category::Packages,
+            Severity::Low,
+            format!("pacman package cache holds {:.1} GiB", gb(bytes)),
+            "pacman keeps every downloaded package version in /var/cache/pacman/pkg until cleaned.",
+        )
+        .with_fix_hint("sudo paccache -rk2")
+        .with_args(vec![format!("{:.1}", gb(bytes))])]
+    }
+
     pub fn security_updates(s: &Snapshot) -> Vec<Finding> {
         let Some(pkgs) = &s.packages else {
             return vec![];
@@ -343,7 +372,7 @@ pub mod packages {
                 format!("{n} security update(s) pending"),
                 "Packages with known security fixes are waiting to be installed.",
             )
-            .with_fix_hint(upgrade_hint(pkgs.manager.as_deref()))
+            .with_fix_hint(security_hint(pkgs.manager.as_deref()))
             .with_args(vec![n.to_string()])],
             _ => vec![],
         }
@@ -869,6 +898,9 @@ mod tests {
             manager: Some("apt".into()),
             broken: vec!["libfoo".into()],
             old_kernels: vec!["a".into(), "b".into(), "c".into()],
+            // Artificial: no real system has both caches, but the
+            // exhaustiveness fixture must trip every declared rule.
+            pacman_cache_bytes: Some(3 * 1024 * 1024 * 1024),
             apt_cache_bytes: Some(2 * 1024 * 1024 * 1024),
             upgradable: Some(50),
             security_upgrades: Some(2),

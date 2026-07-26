@@ -177,6 +177,22 @@
     remedy: "نفّذ sudo apt clean (يحذف ملفات .deb المخزّنة، آمن تمامًا)."
     risk_if_ignored: "فقط استمرار هدر المساحة."
 
+- id: packages.pacman_cache_large
+  en:
+    cause: "pacman never prunes its package cache: every version of every package ever downloaded stays in /var/cache/pacman/pkg."
+    dangerous: "No — it only consumes disk space."
+    impact: "Multiple gigabytes of old package archives accumulate over time and can crowd out a small root filesystem."
+    remedy: "Run paccache -rk2 (from pacman-contrib) to keep the two most recent versions of each package, or pacman -Sc to drop uninstalled packages' archives."
+    risk_if_ignored: "The cache keeps growing with every update until the disk fills."
+  ar:
+    title: "ذاكرة حزم pacman المؤقتة تشغل {0} GiB"
+    summary: "يحتفظ pacman بكل نسخة نزّلها من كل حزمة في ‎/var/cache/pacman/pkg حتى تُنظَّف."
+    cause: "لا ينظّف pacman ذاكرته المؤقتة تلقائياً: كل نسخة نُزّلت من أي حزمة تبقى في ‎/var/cache/pacman/pkg."
+    dangerous: "لا — يستهلك مساحة قرص فقط."
+    impact: "تتراكم عدة غيغابايتات من أرشيفات الحزم القديمة مع الوقت وقد تضيّق على نظام ملفات جذري صغير."
+    remedy: "نفّذ paccache -rk2 (من pacman-contrib) للاحتفاظ بآخر نسختين من كل حزمة، أو pacman -Sc لحذف أرشيفات الحزم غير المثبتة."
+    risk_if_ignored: "ستستمر الذاكرة المؤقتة بالنمو مع كل تحديث حتى يمتلئ القرص."
+
 - id: packages.security_updates
   en:
     cause: "Packages with published security fixes are installed but not yet upgraded."
