@@ -37,6 +37,10 @@ pub struct Strings {
     pub history_tooltip: &'static str,
     pub fix_running: &'static str,
     pub fix_applied: &'static str,
+    pub export_report: &'static str,
+    pub export_first: &'static str,
+    pub export_done: &'static str,
+    pub export_failed: &'static str,
     pub treemap_a11y: &'static str,
 }
 
@@ -76,6 +80,10 @@ impl Strings {
                 history_tooltip: "Health-score history (most recent on the right)",
                 fix_running: "Applying the fix…",
                 fix_applied: "Fix applied — re-checking…",
+                export_report: "Export report…",
+                export_first: "Run a checkup first.",
+                export_done: "Report exported",
+                export_failed: "Could not write the report",
                 treemap_a11y: "Treemap of the largest folders; the list below has the same data",
             },
             Lang::Ar => &Strings {
@@ -109,6 +117,10 @@ impl Strings {
                 history_tooltip: "سجل الدرجة الصحية (الأحدث على اليمين)",
                 fix_running: "جارٍ تطبيق الإصلاح…",
                 fix_applied: "طُبّق الإصلاح — إعادة فحص…",
+                export_report: "تصدير التقرير…",
+                export_first: "شغّل فحصاً أولاً.",
+                export_done: "صُدِّر التقرير",
+                export_failed: "تعذّرت كتابة التقرير",
                 treemap_a11y: "خريطة شجرية لأكبر المجلدات؛ القائمة أدناه تعرض البيانات نفسها",
             },
         }

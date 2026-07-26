@@ -64,6 +64,7 @@ pub fn build_window(app: &adw::Application) {
 
     // Primary menu with an "About SysMedic" entry (author + repo live there).
     let menu = gio::Menu::new();
+    menu.append(Some(strings.export_report), Some("app.export"));
     menu.append(Some(strings.about), Some("app.about"));
     let menu_button = gtk::MenuButton::builder()
         .icon_name("open-menu-symbolic")
@@ -151,6 +152,53 @@ pub fn build_window(app: &adw::Application) {
     app.add_action(&refresh_action);
     app.set_accels_for_action("app.refresh", &["F5", "<Ctrl>r"]);
 
+    // The most recent completed report, kept so it can be exported on demand.
+    let latest_report: Rc<RefCell<Option<HealthReport>>> = Rc::new(RefCell::new(None));
+
+    // "Export report…" — save the last checkup as HTML (or Markdown/JSON,
+    // picked by the chosen file extension).
+    let export_action = gio::SimpleAction::new("export", None);
+    export_action.connect_activate({
+        let latest_report = latest_report.clone();
+        let window = window.clone();
+        let toasts = toasts.clone();
+        move |_, _| {
+            let Some(report) = latest_report.borrow().clone() else {
+                toasts.add_toast(adw::Toast::new(strings.export_first));
+                return;
+            };
+            let dialog = gtk::FileDialog::builder()
+                .title(strings.export_report)
+                .initial_name("sysmedic-report.html")
+                .build();
+            let toasts = toasts.clone();
+            dialog.save(
+                Some(&window),
+                None::<&gio::Cancellable>,
+                move |result: Result<gio::File, glib::Error>| {
+                    // A closed dialog is a cancellation, not an error.
+                    let Some(path) = result.ok().and_then(|f| f.path()) else {
+                        return;
+                    };
+                    let content = match path.extension().and_then(|e| e.to_str()) {
+                        Some("md") | Some("markdown") => {
+                            sysmedic_report::to_markdown(&report, lang)
+                        }
+                        Some("json") => sysmedic_report::to_json(&report),
+                        _ => sysmedic_report::to_html(&report, lang),
+                    };
+                    let message = match write_private(&path, &content) {
+                        Ok(()) => format!("{} — {}", strings.export_done, path.display()),
+                        Err(e) => format!("{}: {e}", strings.export_failed),
+                    };
+                    toasts.add_toast(adw::Toast::new(&message));
+                },
+            );
+        }
+    });
+    app.add_action(&export_action);
+    app.set_accels_for_action("app.export", &["<Ctrl>e"]);
+
     // `run_checkup` needs to reference itself so a finished fix can trigger a
     // re-scan. A shared cell breaks the chicken-and-egg of the self-reference.
     let self_ref: Rc<RefCell<Option<RefreshFn>>> = Rc::new(RefCell::new(None));
@@ -160,6 +208,7 @@ pub fn build_window(app: &adw::Application) {
         let refresh = refresh.clone();
         let window = window.clone();
         let toasts = toasts.clone();
+        let latest_report = latest_report.clone();
         let self_ref = self_ref.clone();
         move || {
             spinner.start();
@@ -175,6 +224,7 @@ pub fn build_window(app: &adw::Application) {
             let refresh = refresh.clone();
             let window = window.clone();
             let toasts = toasts.clone();
+            let latest_report = latest_report.clone();
             let on_changed = self_ref.borrow().clone();
             glib::spawn_future_local(async move {
                 let result = gtk::gio::spawn_blocking(run_engine).await;
@@ -182,6 +232,7 @@ pub fn build_window(app: &adw::Application) {
                 refresh.set_sensitive(true);
                 match result {
                     Ok(report) => {
+                        *latest_report.borrow_mut() = Some(report.clone());
                         let refresh_cb = on_changed.unwrap_or_else(|| Rc::new(|| {}));
                         clamp.set_child(Some(&report_view(
                             &report, lang, &window, &toasts, refresh_cb,
@@ -470,6 +521,20 @@ fn local_timestamp(rfc3339: &str) -> String {
         .and_then(|dt| dt.format("%x %X").ok())
         .map(|s| s.to_string())
         .unwrap_or_else(|| rfc3339.to_string())
+}
+
+/// Write with owner-only permissions: exported reports carry hostnames,
+/// listening ports and the package inventory.
+fn write_private(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    f.write_all(contents.as_bytes())
 }
 
 fn boxed_list() -> gtk::ListBox {

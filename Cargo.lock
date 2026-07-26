@@ -1224,6 +1224,7 @@ dependencies = [
  "sysmedic-fixes",
  "sysmedic-history",
  "sysmedic-knowledge",
+ "sysmedic-report",
 ]
 
 [[package]]
