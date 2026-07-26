@@ -8,7 +8,7 @@ use std::os::unix::process::CommandExt;
 use std::process::Command;
 
 use anyhow::{bail, Result};
-use owo_colors::OwoColorize;
+use owo_colors::{OwoColorize, Stream};
 use sysmedic_core::{Lang, Snapshot};
 use sysmedic_fixes::{self as fixes, Journal, RealRunner};
 
@@ -27,17 +27,30 @@ pub fn list() -> Result<()> {
     let snapshot = collect();
     let plans = fixes::applicable_plans(&snapshot);
     if plans.is_empty() {
-        println!("{}", "No fixes needed — nothing to prescribe.".green());
+        println!(
+            "{}",
+            "No fixes needed — nothing to prescribe."
+                .if_supports_color(Stream::Stdout, |t| t.green())
+        );
         return Ok(());
     }
     println!("Applicable fixes (run `sysmedic fix <id> --dry-run` to preview):\n");
     for plan in plans {
         let rev = if plan.reversible {
-            "reversible".green().to_string()
+            "reversible"
+                .if_supports_color(Stream::Stdout, |t| t.green())
+                .to_string()
         } else {
-            "not reversible".yellow().to_string()
+            "not reversible"
+                .if_supports_color(Stream::Stdout, |t| t.yellow())
+                .to_string()
         };
-        println!("  {}  [{}]  {}", plan.id.bold(), rev, plan.title);
+        println!(
+            "  {}  [{}]  {}",
+            plan.id.if_supports_color(Stream::Stdout, |t| t.bold()),
+            rev,
+            plan.title
+        );
     }
     Ok(())
 }
@@ -54,20 +67,35 @@ pub fn apply(id: &str, dry_run: bool, yes: bool) -> Result<()> {
     println!("{}", plan.preview_in(lang));
 
     if dry_run {
-        println!("{}", "(dry run — nothing was changed)".dimmed());
+        println!(
+            "{}",
+            "(dry run — nothing was changed)".if_supports_color(Stream::Stdout, |t| t.dimmed())
+        );
         return Ok(());
     }
     if !yes {
-        println!("{}", "Re-run with --yes to apply this fix.".cyan());
+        println!(
+            "{}",
+            "Re-run with --yes to apply this fix.".if_supports_color(Stream::Stdout, |t| t.cyan())
+        );
         return Ok(());
     }
 
     if fixes::is_root() {
         let mut journal = Journal::load(fixes::journal_path())?;
         let outcome = fixes::apply(&plan, &RealRunner, &mut journal)?;
-        println!("{} applied {}.", "✓".green(), outcome.fix_id.bold());
+        println!(
+            "{} applied {}.",
+            "✓".if_supports_color(Stream::Stdout, |t| t.green()),
+            outcome
+                .fix_id
+                .if_supports_color(Stream::Stdout, |t| t.bold())
+        );
         for line in outcome.outputs.iter().filter(|l| !l.is_empty()) {
-            println!("  {}", line.dimmed());
+            println!(
+                "  {}",
+                line.if_supports_color(Stream::Stdout, |t| t.dimmed())
+            );
         }
         Ok(())
     } else {
@@ -82,10 +110,21 @@ pub fn undo(yes: bool) -> Result<()> {
         match Journal::load(fixes::journal_path()) {
             Ok(journal) => match journal.last_undoable() {
                 Some((_, entry)) => {
-                    println!("Would undo: {} ({})", entry.title.bold(), entry.fix_id);
-                    println!("{}", "Re-run with --yes to undo.".cyan());
+                    println!(
+                        "Would undo: {} ({})",
+                        entry.title.if_supports_color(Stream::Stdout, |t| t.bold()),
+                        entry.fix_id
+                    );
+                    println!(
+                        "{}",
+                        "Re-run with --yes to undo."
+                            .if_supports_color(Stream::Stdout, |t| t.cyan())
+                    );
                 }
-                None => println!("{}", "Nothing to undo.".green()),
+                None => println!(
+                    "{}",
+                    "Nothing to undo.".if_supports_color(Stream::Stdout, |t| t.green())
+                ),
             },
             Err(e) => println!("(cannot read journal: {e})"),
         }
@@ -95,7 +134,11 @@ pub fn undo(yes: bool) -> Result<()> {
     if fixes::is_root() {
         let mut journal = Journal::load(fixes::journal_path())?;
         let title = fixes::undo(&RealRunner, &mut journal)?;
-        println!("{} reverted {}.", "✓".green(), title.bold());
+        println!(
+            "{} reverted {}.",
+            "✓".if_supports_color(Stream::Stdout, |t| t.green()),
+            title.if_supports_color(Stream::Stdout, |t| t.bold())
+        );
         Ok(())
     } else {
         delegate(&["undo"])

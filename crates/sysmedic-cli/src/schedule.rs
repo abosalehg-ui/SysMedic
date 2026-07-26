@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
-use owo_colors::OwoColorize;
+use owo_colors::{OwoColorize, Stream};
 
 const SERVICE: &str = "sysmedic-checkup.service";
 const TIMER: &str = "sysmedic-checkup.timer";
@@ -128,13 +128,13 @@ pub fn enable(cadence: Cadence) -> Result<()> {
     match systemctl(&["enable", "--now", TIMER]) {
         Ok(()) => println!(
             "{} Scheduled {} checkups. See status with `systemctl --user list-timers`.",
-            "✓".green(),
+            "✓".if_supports_color(Stream::Stdout, |t| t.green()),
             cadence.label()
         ),
         Err(_) => println!(
             "{} Installed the {} timer units, but could not activate them here \
              (no user systemd session). On your desktop run:\n    systemctl --user enable --now {}",
-            "!".yellow(),
+            "!".if_supports_color(Stream::Stdout, |t| t.yellow()),
             cadence.label(),
             TIMER
         ),
@@ -149,7 +149,10 @@ pub fn disable() -> Result<()> {
     let _ = std::fs::remove_file(dir.join(TIMER));
     let _ = std::fs::remove_file(dir.join(SERVICE));
     systemctl(&["daemon-reload"]).ok();
-    println!("{} Scheduled checkups disabled.", "✓".green());
+    println!(
+        "{} Scheduled checkups disabled.",
+        "✓".if_supports_color(Stream::Stdout, |t| t.green())
+    );
     Ok(())
 }
 
@@ -161,11 +164,14 @@ pub fn status() -> Result<()> {
     if !installed {
         println!(
             "Scheduled checkups: {}. Enable with `sysmedic schedule daily`.",
-            "off".yellow()
+            "off".if_supports_color(Stream::Stdout, |t| t.yellow())
         );
         return Ok(());
     }
-    println!("Scheduled checkups: {}", "on".green());
+    println!(
+        "Scheduled checkups: {}",
+        "on".if_supports_color(Stream::Stdout, |t| t.green())
+    );
     // Best-effort: show the next run time.
     let _ = std::process::Command::new("systemctl")
         .args(["--user", "list-timers", TIMER, "--no-pager"])
