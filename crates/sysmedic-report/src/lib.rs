@@ -12,18 +12,17 @@ pub fn to_json(report: &HealthReport) -> String {
 }
 
 /// Headless-browser / converter candidates tried in order for PDF export.
+// No `--no-sandbox`: the input is our own escaped HTML, but there is no reason
+// to hand the renderer a weaker security posture than its default.
 const PDF_TOOLS: &[(&str, &[&str])] = &[
-    (
-        "chromium",
-        &["--headless", "--no-sandbox", "--print-to-pdf={out}", "{in}"],
-    ),
+    ("chromium", &["--headless", "--print-to-pdf={out}", "{in}"]),
     (
         "chromium-browser",
-        &["--headless", "--no-sandbox", "--print-to-pdf={out}", "{in}"],
+        &["--headless", "--print-to-pdf={out}", "{in}"],
     ),
     (
         "google-chrome",
-        &["--headless", "--no-sandbox", "--print-to-pdf={out}", "{in}"],
+        &["--headless", "--print-to-pdf={out}", "{in}"],
     ),
     ("wkhtmltopdf", &["{in}", "{out}"]),
 ];

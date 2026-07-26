@@ -144,6 +144,38 @@ fn engine() -> Engine {
         .with_diagnostics(sysmedic_diagnostics::default_diagnostics())
 }
 
+/// Write `contents` to `path` with owner-only permissions (0600 on Unix).
+/// Reports contain hostnames, listening ports and the package inventory —
+/// useful recon data that shouldn't be world-readable by default.
+fn write_private(path: &std::path::Path, contents: String) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        f.write_all(contents.as_bytes())
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(path, contents)
+    }
+}
+
+/// Best-effort tighten of a file an external tool created (the PDF converter
+/// writes with the default umask).
+fn restrict_permissions(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command.unwrap_or(Command::Checkup {
@@ -163,11 +195,14 @@ fn main() -> Result<()> {
             if format == Format::Pdf {
                 let path = output.unwrap_or_else(|| PathBuf::from("sysmedic-report.pdf"));
                 match sysmedic_report::write_pdf(&report, lang, &path) {
-                    Ok(()) => eprintln!("PDF report written to {}", path.display()),
+                    Ok(()) => {
+                        restrict_permissions(&path);
+                        eprintln!("PDF report written to {}", path.display());
+                    }
                     Err(e) => {
                         // Fall back to an HTML file next to the requested path.
                         let html_path = path.with_extension("html");
-                        fs::write(&html_path, sysmedic_report::to_html(&report, lang))?;
+                        write_private(&html_path, sysmedic_report::to_html(&report, lang))?;
                         eprintln!("{e}\nHTML report written to {}", html_path.display());
                     }
                 }
@@ -194,7 +229,7 @@ fn main() -> Result<()> {
             }
             match output {
                 Some(path) => {
-                    fs::write(&path, rendered)?;
+                    write_private(&path, rendered)?;
                     eprintln!("Report written to {}", path.display());
                 }
                 None => println!("{rendered}"),
@@ -232,8 +267,14 @@ fn main() -> Result<()> {
                     Some(provider) => {
                         let ctx = context.unwrap_or_default();
                         match provider.explain(&id, &ctx, lang) {
-                            Some(text) => {
-                                println!("\nDeep explanation ({}):\n{text}", provider.model())
+                            Some(answer) => {
+                                // The model's text is untrusted for the terminal:
+                                // strip control sequences before printing.
+                                println!(
+                                    "\nDeep explanation ({}):\n{}",
+                                    provider.model(),
+                                    text::sanitize(&answer)
+                                )
                             }
                             None => eprintln!(
                                 "Deep explanation unavailable; showed the offline answer above."

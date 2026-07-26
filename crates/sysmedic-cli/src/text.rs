@@ -51,16 +51,17 @@ pub fn render(report: &HealthReport, lang: Lang) -> String {
             Severity::Medium => badge.yellow().bold().to_string(),
             _ => badge.dimmed().to_string(),
         };
-        let _ = writeln!(out, "  {badge} {}", f.title.bold());
-        let _ = writeln!(out, "      {}", f.summary);
+        let _ = writeln!(out, "  {badge} {}", sanitize(&f.title).bold());
+        let _ = writeln!(out, "      {}", sanitize(&f.summary));
+        let _ = writeln!(out, "      {}", format!("id: {}", f.id).dimmed());
         if let Some(exp) = explain(&f.id, lang) {
             let _ = writeln!(out, "      {} {}", "Remedy:".cyan(), exp.remedy);
         }
         for e in f.evidence.iter().take(5) {
-            let _ = writeln!(out, "        - {}", e.dimmed());
+            let _ = writeln!(out, "        - {}", sanitize(e).dimmed());
         }
         if let Some(hint) = &f.fix_hint {
-            let _ = writeln!(out, "      {} {}", "Try:".cyan(), hint.italic());
+            let _ = writeln!(out, "      {} {}", "Try:".cyan(), sanitize(hint).italic());
         }
         let _ = writeln!(out);
     }
@@ -72,6 +73,16 @@ pub fn render(report: &HealthReport, lang: Lang) -> String {
         }
     }
     out
+}
+
+/// Strip C0/C1 control characters (keeping `\n` and `\t`) from a string that
+/// embeds system data — process names from `/proc/*/comm`, mount labels, LLM
+/// output. A local process named with embedded `\x1b[…` bytes must not be able
+/// to inject terminal control sequences into our output.
+pub fn sanitize(s: &str) -> String {
+    s.chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect()
 }
 
 /// Remove ANSI SGR escape sequences. Used when the rendered report is written
@@ -111,5 +122,12 @@ mod tests {
     #[test]
     fn leaves_plain_text_untouched() {
         assert_eq!(strip_ansi("no color here"), "no color here");
+    }
+
+    #[test]
+    fn sanitize_strips_control_chars_but_keeps_whitespace() {
+        assert_eq!(sanitize("evil\u{1b}[2Jname"), "evil[2Jname");
+        assert_eq!(sanitize("line\nnext\ttab"), "line\nnext\ttab");
+        assert_eq!(sanitize("bell\u{7}cr\u{d}"), "bellcr");
     }
 }

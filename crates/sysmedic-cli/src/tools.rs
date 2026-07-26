@@ -140,6 +140,8 @@ fn notify(alert: &Alert) {
         .args([
             "--app-name=SysMedic",
             &format!("--urgency={urgency}"),
+            // `--` so a title that ever starts with `-` cannot become an option.
+            "--",
             &alert.title,
             &alert.body,
         ])

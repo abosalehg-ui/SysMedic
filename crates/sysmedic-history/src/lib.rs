@@ -59,9 +59,16 @@ pub fn append(path: impl AsRef<Path>, entry: &HistoryEntry) -> Result<(), String
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     }
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
+    let mut opts = std::fs::OpenOptions::new();
+    opts.create(true).append(true);
+    // Owner-only, consistent with the journal: history leaks scores and
+    // finding counts, and there is no reason for other users to read it.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        opts.mode(0o600);
+    }
+    let mut file = opts
         .open(path)
         .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
     let line = serde_json::to_string(entry).expect("entry serializes");
