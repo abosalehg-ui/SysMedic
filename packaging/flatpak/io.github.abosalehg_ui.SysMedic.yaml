@@ -55,6 +55,11 @@ modules:
         /app/share/metainfo/io.github.abosalehg_ui.SysMedic.metainfo.xml
       - install -Dm644 data/io.github.abosalehg_ui.sysmedic.policy
         /app/share/polkit-1/actions/io.github.abosalehg_ui.sysmedic.policy
+      - install -Dm644 data/icons/hicolor/scalable/apps/io.github.abosalehg_ui.SysMedic.svg
+        /app/share/icons/hicolor/scalable/apps/io.github.abosalehg_ui.SysMedic.svg
+      - install -Dm644
+        data/icons/hicolor/symbolic/apps/io.github.abosalehg_ui.SysMedic-symbolic.svg
+        /app/share/icons/hicolor/symbolic/apps/io.github.abosalehg_ui.SysMedic-symbolic.svg
     sources:
       - type: dir
         path: ../..

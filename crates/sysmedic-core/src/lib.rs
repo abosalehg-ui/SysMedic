@@ -10,6 +10,7 @@ pub mod engine;
 pub mod finding;
 pub mod fix;
 pub mod lang;
+pub mod paths;
 pub mod score;
 pub mod snapshot;
 pub mod thresholds;

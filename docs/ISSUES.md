@@ -18,7 +18,7 @@ initial M0/M1 increment; the rest are open work.
 9. ✅ Collectors: packages (dpkg audit, old kernels, apt cache, upgradable/
    security), journal & /var/log sizes, network (route/DNS), security
    (ufw, sshd PermitRootLogin), battery health, snap revisions
-10. ✅ 21 diagnostic rules with stable finding ids + fixture tests
+10. ✅ 28 diagnostic rules with stable finding ids + fixture tests
 11. ✅ Bilingual knowledge base (en/ar) + coverage test
 12. ✅ CLI: `checkup` (text/json/markdown/html, --output, --lang), `checks`,
     `explain`

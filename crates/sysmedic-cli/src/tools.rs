@@ -34,11 +34,14 @@ pub fn disk(path: Option<String>, depth: u32, top: usize) -> Result<()> {
     for child in children {
         let filled = ((child.size as f64 / max as f64) * 20.0).round() as usize;
         let bar: String = "█".repeat(filled) + &"░".repeat(20 - filled);
-        let name = if child.is_dir {
+        // Filenames are attacker-influenceable (a shared directory, an
+        // unpacked archive): strip control characters so a crafted name
+        // cannot inject terminal escape sequences into our output.
+        let name = crate::text::sanitize(&if child.is_dir {
             format!("{}/", child.name)
         } else {
             child.name.clone()
-        };
+        });
         println!("  {bar}  {:>10}  {name}", human(child.size));
     }
     Ok(())
@@ -120,15 +123,21 @@ fn full_report() -> HealthReport {
 /// `sysmedic monitor`: run a checkup, record it in history, and fire a desktop
 /// notification for each active alert. This is what the scheduled timer runs.
 pub fn monitor(quiet: bool) -> Result<()> {
+    let lang = sysmedic_core::Lang::from_locale(&std::env::var("LANG").unwrap_or_default());
     let report = full_report();
 
     // Record history (best-effort — a monitor run should not fail on I/O).
     let entry = HistoryEntry::from_report(&report);
-    if let Err(e) = sysmedic_history::append(sysmedic_history::default_path(), &entry) {
-        eprintln!("warning: could not record history: {e}");
+    match sysmedic_history::default_path() {
+        Some(path) => {
+            if let Err(e) = sysmedic_history::append(path, &entry) {
+                eprintln!("warning: could not record history: {e}");
+            }
+        }
+        None => eprintln!("warning: no HOME or XDG_STATE_HOME — history not recorded"),
     }
 
-    let alerts = sysmedic_core::alert::evaluate(&report.snapshot);
+    let alerts = sysmedic_core::alert::evaluate_in(&report.snapshot, lang);
     for alert in &alerts {
         notify(alert);
     }
@@ -173,7 +182,11 @@ fn notify(alert: &Alert) {
 
 /// `sysmedic history`: show the recorded health-score trend.
 pub fn history() -> Result<()> {
-    let entries = sysmedic_history::load(sysmedic_history::default_path());
+    let Some(path) = sysmedic_history::default_path() else {
+        println!("No history location available (neither HOME nor XDG_STATE_HOME is set).");
+        return Ok(());
+    };
+    let entries = sysmedic_history::load(path);
     if entries.is_empty() {
         println!("No history yet. Run `sysmedic monitor` or enable `sysmedic schedule daily`.");
         return Ok(());

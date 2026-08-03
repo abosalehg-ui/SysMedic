@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Symbolic (monochrome) variant, on the 16x16 GNOME symbolic grid. GTK recolors
+  `fill="#000"` to match the surrounding text, so this must stay single-color
+  and free of gradients or opacity tricks.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <path d="M6.5 1h3v3.5H13v3H9.5V11h-3V7.5H3v-3h3.5z" fill="#000"/>
+  <circle cx="12.5" cy="13" r="2.5" fill="#000"/>
+</svg>

@@ -45,16 +45,41 @@ struct Entry {
 static KNOWLEDGE: Lazy<HashMap<String, (Explanation, Explanation)>> = Lazy::new(|| {
     let raw = include_str!("../data/knowledge.yaml");
     let entries: Vec<Entry> =
-        serde_yaml::from_str(raw).expect("embedded knowledge.yaml must be valid");
+        serde_yaml_ng::from_str(raw).expect("embedded knowledge.yaml must be valid");
     entries.into_iter().map(|e| (e.id, (e.en, e.ar))).collect()
 });
 
+/// Finding ids that were renamed, mapped old → current.
+///
+/// The ids are documented as stable machine identifiers and appear in
+/// `sysmedic explain <id>`, so renaming two of them to match their category
+/// (`packages.security_updates` sat in the Security category;
+/// `snap.old_revisions` in Storage) would otherwise have broken any script or
+/// bookmark using the old name. Lookups accept both; only the new name is
+/// emitted.
+const RENAMED_IDS: &[(&str, &str)] = &[
+    ("packages.security_updates", "security.updates_pending"),
+    ("snap.old_revisions", "storage.snap_old_revisions"),
+];
+
+/// Resolve an id through the rename table.
+pub fn canonical_id(finding_id: &str) -> &str {
+    RENAMED_IDS
+        .iter()
+        .find(|(old, _)| *old == finding_id)
+        .map(|(_, new)| *new)
+        .unwrap_or(finding_id)
+}
+
 /// Explanation for a finding id, or `None` for an unknown id.
+/// Accepts pre-rename ids (see [`RENAMED_IDS`]).
 pub fn explain(finding_id: &str, lang: Lang) -> Option<&'static Explanation> {
-    KNOWLEDGE.get(finding_id).map(|(en, ar)| match lang {
-        Lang::En => en,
-        Lang::Ar => ar,
-    })
+    KNOWLEDGE
+        .get(canonical_id(finding_id))
+        .map(|(en, ar)| match lang {
+            Lang::En => en,
+            Lang::Ar => ar,
+        })
 }
 
 /// The finding's title in `lang`, rendered from the per-id template with the
@@ -167,6 +192,34 @@ mod tests {
             assert!(ar.is_some(), "missing Arabic explanation for {id}");
             assert!(!en.unwrap().remedy.is_empty());
             assert!(!ar.unwrap().remedy.is_empty());
+        }
+    }
+
+    #[test]
+    fn renamed_ids_still_resolve() {
+        // Old ids keep working so `sysmedic explain packages.security_updates`
+        // in someone's script does not start failing after the rename.
+        for (old, new) in super::RENAMED_IDS {
+            assert_eq!(canonical_id(old), *new);
+            let by_old = explain(old, Lang::En).expect("old id still resolves");
+            let by_new = explain(new, Lang::En).expect("new id resolves");
+            assert_eq!(by_old.remedy, by_new.remedy);
+            // And the Arabic side too.
+            assert!(explain(old, Lang::Ar).is_some());
+        }
+        // An unrelated id passes through untouched.
+        assert_eq!(canonical_id("cpu.high_load"), "cpu.high_load");
+    }
+
+    #[test]
+    fn renamed_ids_point_at_ids_the_rules_actually_emit() {
+        // A rename table entry pointing at a nonexistent id would silently
+        // resurrect the bug it was meant to fix.
+        for (_, new) in super::RENAMED_IDS {
+            assert!(
+                sysmedic_diagnostics::FINDING_IDS.contains(new),
+                "rename target {new} is not a declared finding id"
+            );
         }
     }
 

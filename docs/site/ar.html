@@ -17,6 +17,12 @@
     }
   }
   * { box-sizing: border-box; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important; scroll-behavior: auto !important;
+    }
+  }
   body {
     margin: 0; background: var(--bg); color: var(--fg);
     font: 16px/1.8 system-ui, -apple-system, "Segoe UI", "Noto Kufi Arabic", "Noto Sans Arabic", Roboto, sans-serif;
@@ -45,7 +51,7 @@
     background: var(--card); border: 1px solid var(--border); border-radius: 12px;
     padding: 18px; overflow-x: auto; font-size: 0.9rem; direction: ltr; text-align: left;
   }
-  ul.feat { columns: 2; column-gap: 32px; padding-right: 20px; padding-left: 0; }
+  ul.feat { columns: 2; column-gap: 32px; padding-inline-start: 20px; padding-inline-end: 0; }
   @media (max-width: 560px) { ul.feat { columns: 1; } header h1 { font-size: 2.2rem; } }
   footer { text-align: center; color: var(--muted); padding: 48px 20px; border-top: 1px solid var(--border); margin-top: 56px; font-size: 0.9rem; }
   .lang-switch { position: absolute; top: 16px; inset-inline-end: 20px; font-size: 0.95rem; }
@@ -69,7 +75,7 @@
 <main class="wrap">
   <div class="steps">
     <div class="step"><b>الفحص</b><span>درجة صحية من 0 إلى 100 لنظامك كاملاً.</span></div>
-    <div class="step"><b>التشخيص</b><span>27 قاعدة تكتشف المشاكل الحقيقية.</span></div>
+    <div class="step"><b>التشخيص</b><span>28 قاعدة تكتشف المشاكل الحقيقية.</span></div>
     <div class="step"><b>الشرح</b><span>بالعربية والإنجليزية، دون إنترنت.</span></div>
     <div class="step"><b>الوصفة</b><span>إصلاحات آمنة قابلة للتراجع عبر polkit.</span></div>
     <div class="step"><b>المتابعة</b><span>فحوص مجدولة وتنبيهات.</span></div>

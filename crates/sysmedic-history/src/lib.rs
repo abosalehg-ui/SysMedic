@@ -50,18 +50,14 @@ impl HistoryEntry {
 }
 
 /// Default per-user history path (honours `XDG_STATE_HOME`).
-pub fn default_path() -> PathBuf {
-    let base = std::env::var("XDG_STATE_HOME")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var("HOME")
-                .ok()
-                .map(|h| Path::new(&h).join(".local/state"))
-        })
-        .unwrap_or_else(|| PathBuf::from("/tmp"));
-    base.join("sysmedic/history.jsonl")
+///
+/// `None` when neither `XDG_STATE_HOME` nor `HOME` is set. This used to fall
+/// back to `/tmp/sysmedic/history.jsonl` — a predictable path in a
+/// world-traversable directory, so another local user could pre-create the
+/// directory (which `create_dir_all` accepts silently) and plant a symlink at
+/// the file we then append to.
+pub fn default_path() -> Option<PathBuf> {
+    sysmedic_core::paths::state_dir().map(|base| base.join("sysmedic/history.jsonl"))
 }
 
 /// Append one entry, creating parent directories as needed.
@@ -78,10 +74,12 @@ pub fn append(path: impl AsRef<Path>, entry: &HistoryEntry) -> Result<(), Histor
     opts.create(true).append(true);
     // Owner-only, consistent with the journal: history leaks scores and
     // finding counts, and there is no reason for other users to read it.
+    // `O_NOFOLLOW` refuses a pre-planted symlink at this path, matching the
+    // protection the transaction journal already had.
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt as _;
-        opts.mode(0o600);
+        opts.mode(0o600).custom_flags(libc::O_NOFOLLOW);
     }
     let mut file = opts.open(path).map_err(io(path))?;
     let line = serde_json::to_string(entry).expect("entry serializes");

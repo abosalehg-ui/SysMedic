@@ -22,7 +22,11 @@ sysmedic-history = { path = "crates/sysmedic-history" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
+# serde_yaml 0.9 was archived by its author ("+deprecated" is in the version
+# string itself), so it will never receive a fix. serde_yaml_ng is the
+# maintained continuation with the same API. The other common suggestion,
+# serde_yml, is itself now marked deprecated on crates.io.
+serde_yaml_ng = "0.10"
 anyhow = "1"
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }

@@ -19,7 +19,7 @@
 use std::process::ExitCode;
 
 use sysmedic_fixes::{
-    apply, journal_path, plan, undo, CommandRunner, Journal, RealRunner, SYSTEM_JOURNAL,
+    apply, fix_ids, journal_path, plan, undo, CommandRunner, Journal, RealRunner, SYSTEM_JOURNAL,
 };
 
 fn snapshot() -> sysmedic_core::Snapshot {
@@ -28,8 +28,16 @@ fn snapshot() -> sysmedic_core::Snapshot {
 }
 
 fn open_journal() -> Result<Journal, String> {
-    // The helper always runs as root, so this resolves to SYSTEM_JOURNAL.
-    Journal::load(journal_path()).map_err(|e| e.to_string())
+    // The helper always runs as root, so this resolves to SYSTEM_JOURNAL and
+    // is never `None` — but handle it rather than unwrapping in a root process.
+    let path = journal_path().ok_or_else(|| "no journal path available".to_string())?;
+    Journal::load(path).map_err(|e| e.to_string())
+}
+
+/// The helper reports in the language of the caller's environment, so the GUI
+/// and CLI can surface its message unchanged.
+fn helper_lang() -> sysmedic_core::Lang {
+    sysmedic_core::Lang::from_locale(&std::env::var("LANG").unwrap_or_default())
 }
 
 /// What the helper was asked to do. The only free-form input from the caller
@@ -48,7 +56,7 @@ const USAGE: &str = "usage: sysmedic-fix-helper <apply <fix-id>|undo|list-journa
 fn parse_action(args: &[String]) -> Result<Action, String> {
     match args {
         [cmd, fix_id] if cmd == "apply" => {
-            if !sysmedic_fixes::FIX_IDS.contains(&fix_id.as_str()) {
+            if !fix_ids().contains(&fix_id.as_str()) {
                 return Err(format!("unknown fix id '{fix_id}'"));
             }
             Ok(Action::Apply(fix_id.clone()))
@@ -76,12 +84,13 @@ fn run() -> Result<String, String> {
             let outcome = apply(&plan, runner, &mut journal).map_err(|e| e.to_string())?;
             Ok(format!(
                 "Applied {} ({}). Journal: {SYSTEM_JOURNAL}",
-                outcome.fix_id, plan.title
+                outcome.fix_id,
+                plan.title_in(helper_lang())
             ))
         }
         Action::Undo => {
             let mut journal = open_journal()?;
-            let title = undo(runner, &mut journal).map_err(|e| e.to_string())?;
+            let title = undo(runner, &mut journal, helper_lang()).map_err(|e| e.to_string())?;
             Ok(format!("Reverted: {title}"))
         }
         Action::ListJournal => {
@@ -89,9 +98,16 @@ fn run() -> Result<String, String> {
             let mut out = String::new();
             for e in journal.entries() {
                 out.push_str(&format!(
-                    "{}  {}  {}{}\n",
+                    "{}  {}  {}  {}{}\n",
                     e.applied_at,
                     e.fix_id,
+                    // Surface the state so a Pending/Failed entry — a fix that
+                    // may have got partway — is visible in the audit listing.
+                    match e.state {
+                        sysmedic_fixes::EntryState::Applied => "applied",
+                        sysmedic_fixes::EntryState::Pending => "pending",
+                        sysmedic_fixes::EntryState::Failed => "failed",
+                    },
                     e.title,
                     if e.undone { "  (undone)" } else { "" }
                 ));

@@ -207,20 +207,40 @@ pub fn to_html(report: &HealthReport, lang: Lang) -> String {
     format!(
         r#"<!DOCTYPE html>
 <html dir="{dir}" lang="{lang_code}"><head><meta charset="utf-8"><title>{report_title}</title><style>
-:root {{ color-scheme: light dark; font-family: system-ui, sans-serif; }}
+:root {{
+  color-scheme: light dark;
+  /* An explicit Arabic stack: `system-ui` alone resolves to a Latin face on
+     many distros, so an Arabic report fell back to a substituted font. */
+  font-family: system-ui, "Noto Kufi Arabic", "Noto Sans Arabic", "Segoe UI", sans-serif;
+}}
 body {{ max-width: 860px; margin: 2rem auto; padding: 0 1rem; }}
 .score {{ font-size: 3rem; font-weight: 700; }}
 .cat {{ display: grid; grid-template-columns: 8rem 1fr 3rem; gap: .5rem; align-items: center; margin: .2rem 0; }}
 .bar {{ background: rgba(128,128,128,.25); border-radius: 6px; height: 10px; }}
 .bar div {{ background: #26a269; border-radius: 6px; height: 10px; }}
+@media (prefers-reduced-motion: reduce) {{ * {{ animation: none !important; transition: none !important; }} }}
 article {{ border: 1px solid rgba(128,128,128,.35); border-radius: 10px; padding: .2rem 1rem 1rem; margin: 1rem 0; }}
-.badge {{ font-size: .7rem; text-transform: uppercase; padding: .15rem .5rem; border-radius: 999px; background: rgba(128,128,128,.25); }}
+/* An explicit pair for the neutral badge too: under `color-scheme: light dark`
+   the inherited color flips with the viewer's theme, so low/info badges had no
+   guaranteed contrast against this fixed grey. */
+.badge {{
+  font-size: .7rem; text-transform: uppercase; padding: .15rem .5rem;
+  border-radius: 999px; background: rgba(128,128,128,.25); color: #241f31;
+}}
+@media (prefers-color-scheme: dark) {{ .badge {{ color: #f2f2f5; }} }}
 .sev-critical .badge {{ background: #c01c28; color: #fff; }}
 .sev-high .badge {{ background: #e66100; color: #fff; }}
 /* Explicit dark text: under `color-scheme: light dark` the inherited color is
    near-white in dark mode, which fails contrast on the amber background. */
 .sev-medium .badge {{ background: #e5a50a; color: #241f31; }}
-pre {{ overflow-x: auto; background: rgba(128,128,128,.15); padding: .6rem; border-radius: 8px; }}
+/* Evidence is commands, paths and unit names. Inside a dir="rtl" document the
+   bidi algorithm reorders those visually; isolating them to LTR keeps a path
+   like /var/log/syslog readable. */
+pre {{
+  overflow-x: auto; background: rgba(128,128,128,.15);
+  padding: .6rem; border-radius: 8px;
+  direction: ltr; text-align: left;
+}}
 </style></head><body>
 <h1>{report_title}</h1>
 <p><i>{generated_label}: {generated}</i></p>
@@ -363,6 +383,29 @@ mod tests {
         // The report chrome is Arabic, not half-English.
         assert!(html.contains("تقرير صحّة SysMedic"));
         assert!(html.contains("النتائج"));
+    }
+
+    #[test]
+    fn html_carries_an_arabic_font_stack_and_isolates_evidence() {
+        let html = to_html(&report(), Lang::Ar);
+        // A Latin-only `system-ui` left Arabic to a substituted face.
+        assert!(
+            html.contains("Noto Kufi Arabic") || html.contains("Noto Sans Arabic"),
+            "no Arabic font fallback in the report stylesheet"
+        );
+        // Commands and paths must not be bidi-reordered inside an RTL page.
+        assert!(
+            html.contains("direction: ltr"),
+            "evidence block is not isolated to LTR"
+        );
+    }
+
+    #[test]
+    fn badges_pin_their_text_color_in_both_schemes() {
+        // Low/info badges inherit no guaranteed color under
+        // `color-scheme: light dark`; both schemes must be pinned.
+        let html = to_html(&report(), Lang::En);
+        assert!(html.contains("prefers-color-scheme: dark"));
     }
 
     #[test]

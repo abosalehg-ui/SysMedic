@@ -32,7 +32,10 @@ impl Collector for SmartCollector {
             // signal at all (e.g. a device we lacked permission to open) — as
             // "denied". Using `run` here (success-only) would silently drop
             // exactly the failing drives the `smart.failing` rule exists for.
-            match util::run_captured("smartctl", &["-j", "-H", "-A", "-i", &dev]) {
+            // `--` ends option parsing: the device path comes from smartctl's
+            // own scan output, but a node name that began with a dash would
+            // otherwise be read as a flag.
+            match util::run_captured("smartctl", &["-j", "-H", "-A", "-i", "--", &dev]) {
                 Some(output) => match parse_device(&output.stdout) {
                     Some(parsed) => out.push(parsed),
                     None => denied = true,

@@ -45,6 +45,12 @@ cargo install --path crates/sysmedic-cli
 Flatpak, AppImage and Snap manifests live in [`packaging/`](packaging/README.md)
 with build instructions for each.
 
+> **Auto-Fix requires the `.deb`.** The polkit action authorizes one exact
+> path, `/usr/libexec/sysmedic-fix-helper`, which only the `.deb` installs on
+> the host. Under Flatpak, Snap and AppImage the helper lives inside the
+> bundle, so applying fixes is unavailable there. Diagnostics — the read-only
+> checkup, explanations, disk analysis and reports — work in every format.
+
 ## Optional: deep explanations
 
 The offline knowledge base explains every finding with **no network access**.
@@ -66,6 +72,19 @@ id and its evidence are ever sent — never files or credentials.
 - **`smartmontools`** — richer SMART disk-health findings (`sudo apt install smartmontools`).
 - **`chromium` / `wkhtmltopdf`** — PDF export (`sysmedic checkup --format pdf`);
   falls back to HTML if neither is present.
+
+## Environment variables
+
+Every one is optional; SysMedic works with none of them set.
+
+| Variable | Effect |
+|---|---|
+| `ANTHROPIC_API_KEY` | Enables `explain --deep`. Absent, `--deep` prints the offline answer and a hint. Only the finding id and its evidence are ever sent. |
+| `SYSMEDIC_LLM_MODEL` | Overrides the Claude model used by `--deep`. |
+| `XDG_STATE_HOME` | Where the health-score history and the per-user fix journal live. Falls back to `$HOME/.local/state`. If neither is set, SysMedic reports that it cannot record history rather than writing to a shared temp directory. |
+| `LANG` | Selects the explanation, report and fix-consent language (`ar*` → Arabic, otherwise English). Override per-command with `--lang`. |
+| `NO_COLOR` | Suppresses ANSI color in CLI output. Color is also dropped automatically when writing to a file or a pipe. |
+| `SYSMEDIC_HELPER` | **Debug builds only.** Points `pkexec` at an alternative fix-helper binary for development. Compiled out of release builds so nothing can redirect the privileged prompt. |
 
 ## Scheduling checkups
 

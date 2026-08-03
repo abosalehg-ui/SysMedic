@@ -1,5 +1,55 @@
 # Changelog
 
+
+## [Unreleased]
+
+### Security
+- Report and state files are now forced to `0600` **after** opening, not only
+  at creation. `OpenOptions::mode` is ignored for a file that already exists,
+  so regenerating a report over one an editor had rewritten as `0644` silently
+  republished hostnames, listening ports and the package inventory
+  world-readable.
+- `apply` now journals a fix as `pending` *before* running its commands and
+  only then marks it `applied`/`failed`. Journalling afterwards meant a failed
+  journal write — most plausibly a full disk, a common reason to run SysMedic
+  at all — left the system changed with nothing for `undo` to find.
+- `SYSMEDIC_HELPER` is compiled out of release builds. It could redirect
+  `pkexec` at an arbitrary binary; not an escalation (polkit still
+  authenticates) but the prompt named a program the user had not chosen.
+- History is written with `O_NOFOLLOW`, matching the journal. Neither file
+  falls back to `/tmp` any more when `HOME`/`XDG_STATE_HOME` are unset — a
+  predictable path in a world-traversable directory invited a planted symlink.
+- Filenames printed by `sysmedic disk` are stripped of control characters, so
+  a crafted name cannot inject terminal escape sequences.
+- `smartctl` is invoked with `--` before the device path.
+- Replaced the archived `serde_yaml` 0.9 with the maintained `serde_yaml_ng`.
+
+### Added
+- An application icon (scalable + symbolic), installed by all four packaging
+  formats. The `.desktop` file and About dialog had always named one.
+- The disk scan reports progress and can be cancelled, and the Disk Usage page
+  can scan any folder rather than only `$HOME`.
+- Treemap tiles are keyboard-navigable (arrows, Home/End) with a visible focus
+  ring, and announce themselves to assistive technology.
+- Reduced-motion support in the app and on both site pages.
+
+### Changed
+- Fix plans carry bilingual titles and descriptions, so the Arabic consent
+  dialog translates the substance of a privileged change and not just the
+  labels around it. Desktop alerts are localized too.
+- HTML reports ship an Arabic font stack and isolate evidence blocks to LTR so
+  paths and commands are not bidi-reordered inside an RTL document.
+- Renamed `packages.security_updates` to `security.updates_pending` and
+  `snap.old_revisions` to `storage.snap_old_revisions` so every id prefix
+  matches its scoring category. **The old ids still resolve** in
+  `sysmedic explain`.
+- `FIX_IDS` is derived from the fix registry instead of hand-maintained.
+
+### Fixed
+- Rule count in the README, both site pages, `ISSUES.md` and `ROADMAP.md`
+  (said 27 and 21; there are 28), now guarded by a test.
+- `padding-inline-*` instead of physical properties on the Arabic page.
+
 All notable changes to SysMedic are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).

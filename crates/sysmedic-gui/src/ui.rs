@@ -10,6 +10,7 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 use sysmedic_core::fix::FixPlan;
 use sysmedic_core::HealthReport;
+use sysmedic_fixes::helper_path;
 use sysmedic_knowledge::Lang;
 
 use crate::viewmodel::{self, Strings};
@@ -17,13 +18,17 @@ use crate::viewmodel::{self, Strings};
 const REPO_URL: &str = "https://github.com/abosalehg-ui/SysMedic";
 const ISSUES_URL: &str = "https://github.com/abosalehg-ui/SysMedic/issues";
 
-const DEFAULT_HELPER: &str = "/usr/libexec/sysmedic-fix-helper";
-
 /// A "re-run the checkup" callback, shared so a finished fix can trigger it.
 type RefreshFn = Rc<dyn Fn()>;
 
-fn helper_path() -> String {
-    std::env::var("SYSMEDIC_HELPER").unwrap_or_else(|_| DEFAULT_HELPER.to_string())
+/// Whether the user asked for reduced motion (GNOME exposes this as the
+/// `gtk-enable-animations` setting, which the desktop turns off for
+/// `prefers-reduced-motion`). The checkup spinner runs for as long as the scan
+/// takes, so honouring this matters more here than for a brief transition.
+pub fn animations_enabled() -> bool {
+    gtk::Settings::default()
+        .map(|s| s.is_gtk_enable_animations())
+        .unwrap_or(true)
 }
 
 pub fn load_css() {
@@ -46,7 +51,9 @@ fn run_engine() -> HealthReport {
     // so rapid refresh clicks don't flood history and turn the trend into a
     // click-rate graph; scheduled `monitor` runs are far enough apart to record.
     let entry = sysmedic_history::HistoryEntry::from_report(&report);
-    let _ = sysmedic_history::append_throttled(sysmedic_history::default_path(), &entry, 300);
+    if let Some(path) = sysmedic_history::default_path() {
+        let _ = sysmedic_history::append_throttled(path, &entry, 300);
+    }
     report
 }
 
@@ -155,49 +162,7 @@ pub fn build_window(app: &adw::Application) {
     // The most recent completed report, kept so it can be exported on demand.
     let latest_report: Rc<RefCell<Option<HealthReport>>> = Rc::new(RefCell::new(None));
 
-    // "Export report…" — save the last checkup as HTML (or Markdown/JSON,
-    // picked by the chosen file extension).
-    let export_action = gio::SimpleAction::new("export", None);
-    export_action.connect_activate({
-        let latest_report = latest_report.clone();
-        let window = window.clone();
-        let toasts = toasts.clone();
-        move |_, _| {
-            let Some(report) = latest_report.borrow().clone() else {
-                toasts.add_toast(adw::Toast::new(strings.export_first));
-                return;
-            };
-            let dialog = gtk::FileDialog::builder()
-                .title(strings.export_report)
-                .initial_name("sysmedic-report.html")
-                .build();
-            let toasts = toasts.clone();
-            dialog.save(
-                Some(&window),
-                None::<&gio::Cancellable>,
-                move |result: Result<gio::File, glib::Error>| {
-                    // A closed dialog is a cancellation, not an error.
-                    let Some(path) = result.ok().and_then(|f| f.path()) else {
-                        return;
-                    };
-                    let content = match path.extension().and_then(|e| e.to_str()) {
-                        Some("md") | Some("markdown") => {
-                            sysmedic_report::to_markdown(&report, lang)
-                        }
-                        Some("json") => sysmedic_report::to_json(&report),
-                        _ => sysmedic_report::to_html(&report, lang),
-                    };
-                    let message = match write_private(&path, &content) {
-                        Ok(()) => format!("{} — {}", strings.export_done, path.display()),
-                        Err(e) => format!("{}: {e}", strings.export_failed),
-                    };
-                    toasts.add_toast(adw::Toast::new(&message));
-                },
-            );
-        }
-    });
-    app.add_action(&export_action);
-    app.set_accels_for_action("app.export", &["<Ctrl>e"]);
+    install_export_action(app, &window, &toasts, latest_report.clone(), lang);
 
     // `run_checkup` needs to reference itself so a finished fix can trigger a
     // re-scan. A shared cell breaks the chicken-and-egg of the self-reference.
@@ -211,7 +176,13 @@ pub fn build_window(app: &adw::Application) {
         let latest_report = latest_report.clone();
         let self_ref = self_ref.clone();
         move || {
-            spinner.start();
+            // A perpetually spinning widget is exactly what reduced-motion
+            // users are asking to avoid; the status page below still says the
+            // checkup is running, so no information is lost by holding still.
+            if animations_enabled() {
+                spinner.start();
+            }
+            spinner.set_visible(animations_enabled());
             refresh.set_sensitive(false);
             clamp.set_child(Some(
                 &adw::StatusPage::builder()
@@ -263,6 +234,87 @@ pub fn build_window(app: &adw::Application) {
     window.present();
 }
 
+/// Which renderer an export path's extension selects. Pure, so the mapping is
+/// unit-tested without a file dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    Html,
+    Markdown,
+    Json,
+}
+
+/// Pick the export format from a filename. Anything unrecognised becomes HTML,
+/// which is the format the dialog proposes by default.
+pub fn export_format_for(path: &std::path::Path) -> ExportFormat {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("md") | Some("markdown") => ExportFormat::Markdown,
+        Some("json") => ExportFormat::Json,
+        _ => ExportFormat::Html,
+    }
+}
+
+/// Render `report` in the requested export format.
+pub fn render_export(report: &HealthReport, format: ExportFormat, lang: Lang) -> String {
+    match format {
+        ExportFormat::Markdown => sysmedic_report::to_markdown(report, lang),
+        ExportFormat::Json => sysmedic_report::to_json(report),
+        ExportFormat::Html => sysmedic_report::to_html(report, lang),
+    }
+}
+
+/// "Export report…" — save the last checkup as HTML (or Markdown/JSON, picked
+/// by the chosen file extension). Extracted from `build_window`, which had
+/// accumulated action wiring, fix handling and layout in one long function.
+fn install_export_action(
+    app: &adw::Application,
+    window: &adw::ApplicationWindow,
+    toasts: &adw::ToastOverlay,
+    latest_report: Rc<RefCell<Option<HealthReport>>>,
+    lang: Lang,
+) {
+    let strings = Strings::for_lang(lang);
+    let export_action = gio::SimpleAction::new("export", None);
+    export_action.connect_activate({
+        let window = window.clone();
+        let toasts = toasts.clone();
+        move |_, _| {
+            let Some(report) = latest_report.borrow().clone() else {
+                toasts.add_toast(adw::Toast::new(strings.export_first));
+                return;
+            };
+            let dialog = gtk::FileDialog::builder()
+                .title(strings.export_report)
+                .initial_name("sysmedic-report.html")
+                .build();
+            let toasts = toasts.clone();
+            dialog.save(
+                Some(&window),
+                None::<&gio::Cancellable>,
+                move |result: Result<gio::File, glib::Error>| {
+                    // A closed dialog is a cancellation, not an error.
+                    let Some(path) = result.ok().and_then(|f| f.path()) else {
+                        return;
+                    };
+                    let content = render_export(&report, export_format_for(&path), lang);
+                    let message =
+                        match sysmedic_core::paths::write_private(&path, content.as_bytes()) {
+                            Ok(()) => format!("{} — {}", strings.export_done, path.display()),
+                            Err(e) => format!("{}: {e}", strings.export_failed),
+                        };
+                    toasts.add_toast(adw::Toast::new(&message));
+                },
+            );
+        }
+    });
+    app.add_action(&export_action);
+    app.set_accels_for_action("app.export", &["<Ctrl>e"]);
+}
+
 /// The About dialog: app identity, author, repository and contact.
 fn show_about(parent: &adw::ApplicationWindow, lang: Lang) {
     let strings = Strings::for_lang(lang);
@@ -283,6 +335,38 @@ fn show_about(parent: &adw::ApplicationWindow, lang: Lang) {
     about.present(Some(parent));
 }
 
+/// What the UI should do after the helper exits. Pure, so the branch that
+/// decides whether a privileged change succeeded — previously buried in a
+/// closure and untested — can be exercised directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixOutcome {
+    /// The helper reported success: confirm it and re-scan.
+    Applied,
+    /// pkexec was cancelled, the helper failed, or it is not installed.
+    /// The user must be told, not left with a silent re-scan.
+    Failed,
+}
+
+/// Decide the outcome from the helper's exit status.
+pub fn fix_outcome(helper_succeeded: bool) -> FixOutcome {
+    if helper_succeeded {
+        FixOutcome::Applied
+    } else {
+        FixOutcome::Failed
+    }
+}
+
+/// The dialog appearance a plan's reversibility earns. An irreversible
+/// privileged change gets the destructive (red) style rather than the
+/// encouraging blue "suggested" one.
+pub fn response_appearance_for(reversible: bool) -> adw::ResponseAppearance {
+    if reversible {
+        adw::ResponseAppearance::Suggested
+    } else {
+        adw::ResponseAppearance::Destructive
+    }
+}
+
 /// Ask polkit (via pkexec) to run the helper for `fix_id`, then re-scan.
 fn confirm_and_apply(
     window: &adw::ApplicationWindow,
@@ -300,6 +384,8 @@ fn confirm_and_apply(
     let dialog = adw::AlertDialog::new(Some(strings.confirm_fix_title), Some(reversibility));
     // The preview (commands, paths, risk) as a start-aligned monospace block —
     // centered proportional text made command lines hard to scan.
+    // `preview_in` now localizes the plan's title and description as well as
+    // the field labels, so an Arabic user reads the whole consent text.
     let preview = gtk::Label::new(Some(&plan.preview_in(lang)));
     preview.set_xalign(0.0);
     preview.set_wrap(true);
@@ -310,14 +396,7 @@ fn confirm_and_apply(
     dialog.add_response("apply", strings.apply);
     // An irreversible privileged change earns the destructive (red) style,
     // not the encouraging blue "suggested" one.
-    dialog.set_response_appearance(
-        "apply",
-        if plan.reversible {
-            adw::ResponseAppearance::Suggested
-        } else {
-            adw::ResponseAppearance::Destructive
-        },
-    );
+    dialog.set_response_appearance("apply", response_appearance_for(plan.reversible));
     dialog.set_default_response(Some("cancel"));
     dialog.set_close_response("cancel");
 
@@ -355,7 +434,7 @@ fn confirm_and_apply(
             .await
             .unwrap_or(false);
             running.dismiss();
-            if succeeded {
+            if fix_outcome(succeeded) == FixOutcome::Applied {
                 // Say it worked — a silent re-scan left users guessing whether
                 // the fix ran or the score just changed.
                 toasts.add_toast(adw::Toast::new(strings.fix_applied));
@@ -405,7 +484,9 @@ fn report_view(
     }
 
     // History trend strip (populated by past checkups).
-    let entries = sysmedic_history::load(sysmedic_history::default_path());
+    let entries = sysmedic_history::default_path()
+        .map(sysmedic_history::load)
+        .unwrap_or_default();
     if entries.len() >= 2 {
         let spark = sysmedic_history::sparkline(&entries, 40);
         let trend = sysmedic_history::trend_delta(&entries)
@@ -523,20 +604,6 @@ fn local_timestamp(rfc3339: &str) -> String {
         .unwrap_or_else(|| rfc3339.to_string())
 }
 
-/// Write with owner-only permissions: exported reports carry hostnames,
-/// listening ports and the package inventory.
-fn write_private(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
-    use std::io::Write as _;
-    use std::os::unix::fs::OpenOptionsExt as _;
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    f.write_all(contents.as_bytes())
-}
-
 fn boxed_list() -> gtk::ListBox {
     gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::None)
@@ -558,4 +625,81 @@ fn detail_row(title: &str, subtitle: &str) -> adw::ActionRow {
         .subtitle(glib::markup_escape_text(subtitle))
         .subtitle_lines(0)
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn export_format_follows_the_extension() {
+        use std::path::Path;
+        assert_eq!(export_format_for(Path::new("r.md")), ExportFormat::Markdown);
+        assert_eq!(
+            export_format_for(Path::new("r.markdown")),
+            ExportFormat::Markdown
+        );
+        assert_eq!(export_format_for(Path::new("r.json")), ExportFormat::Json);
+        assert_eq!(export_format_for(Path::new("r.html")), ExportFormat::Html);
+        // Unknown and missing extensions fall back to the dialog's default.
+        assert_eq!(export_format_for(Path::new("r.txt")), ExportFormat::Html);
+        assert_eq!(export_format_for(Path::new("report")), ExportFormat::Html);
+        // Case is not significant on the extension.
+        assert_eq!(export_format_for(Path::new("R.JSON")), ExportFormat::Json);
+    }
+
+    #[test]
+    fn render_export_produces_the_selected_format() {
+        use sysmedic_core::{Category, Finding, Severity, Snapshot};
+        let report = HealthReport::build(
+            Snapshot::default(),
+            vec![Finding::new(
+                "storage.disk_nearly_full",
+                Category::Storage,
+                Severity::Critical,
+                "Filesystem / is 96% full",
+                "Only 4 GiB free.",
+            )],
+        );
+        let json = render_export(&report, ExportFormat::Json, Lang::En);
+        assert!(serde_json_is_object(&json));
+        let html = render_export(&report, ExportFormat::Html, Lang::Ar);
+        assert!(html.contains("dir=\"rtl\""));
+        let md = render_export(&report, ExportFormat::Markdown, Lang::En);
+        assert!(md.starts_with('#'));
+    }
+
+    fn serde_json_is_object(s: &str) -> bool {
+        s.trim_start().starts_with('{')
+    }
+
+    #[test]
+    fn a_failed_helper_is_never_reported_as_success() {
+        // The user must be told when pkexec was cancelled or the helper is
+        // missing; a silent re-scan left them guessing whether it ran.
+        assert_eq!(fix_outcome(true), FixOutcome::Applied);
+        assert_eq!(fix_outcome(false), FixOutcome::Failed);
+    }
+
+    #[test]
+    fn irreversible_fixes_get_the_destructive_style() {
+        assert_eq!(
+            response_appearance_for(false),
+            adw::ResponseAppearance::Destructive
+        );
+        assert_eq!(
+            response_appearance_for(true),
+            adw::ResponseAppearance::Suggested
+        );
+    }
+
+    #[test]
+    fn local_timestamp_falls_back_to_the_raw_string() {
+        assert_eq!(local_timestamp("not a timestamp"), "not a timestamp");
+        // A valid RFC3339 stamp renders as something else (locale-dependent).
+        assert_ne!(
+            local_timestamp("2026-08-03T12:00:00Z"),
+            "2026-08-03T12:00:00Z"
+        );
+    }
 }

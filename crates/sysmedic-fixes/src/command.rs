@@ -12,11 +12,7 @@ pub trait CommandRunner: Send + Sync {
 /// Executes commands for real (no shell — program + args directly).
 pub struct RealRunner;
 
-/// A minimal, known-good `PATH` for the privileged helper. Fix commands are
-/// resolved here rather than through the inherited `PATH`, so a poisoned
-/// `PATH` cannot substitute an attacker-controlled binary for `apt-get`,
-/// `ufw`, etc. when they run as root.
-const SAFE_PATH: &str = "/usr/sbin:/usr/bin:/sbin:/bin";
+use sysmedic_core::paths::SAFE_PATH;
 
 impl CommandRunner for RealRunner {
     fn run(&self, command: &FixCommand) -> Result<String, String> {
