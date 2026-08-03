@@ -38,6 +38,23 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests
         run: cargo test --workspace --locked
+      # Coverage is reported, not gated: a threshold invites tests written to
+      # move the number. The summary makes a drop visible in review instead.
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@daa3c1f1f9a9d46f686d9fc2f65773d0c293688b # v2.62.44
+        with:
+          tool: cargo-llvm-cov
+      - name: Coverage summary
+        run: |
+          cargo llvm-cov --workspace --locked --summary-only \
+            --ignore-filename-regex '(main\.rs|ui\.rs)$' \
+            | tee coverage.txt
+          {
+            echo '### Test coverage'
+            echo '```'
+            tail -n 3 coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Build CLI + fix helper (release)
         run: cargo build --release --locked -p sysmedic-cli -p sysmedic-fix-helper
       - name: Smoke-run checkup

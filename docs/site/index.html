@@ -17,6 +17,12 @@
     }
   }
   * { box-sizing: border-box; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important; scroll-behavior: auto !important;
+    }
+  }
   body {
     margin: 0; background: var(--bg); color: var(--fg);
     font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -69,7 +75,7 @@
 <main class="wrap">
   <div class="steps">
     <div class="step"><b>Checkup</b><span>A 0–100 health score across your whole system.</span></div>
-    <div class="step"><b>Diagnose</b><span>27 rules find the real problems.</span></div>
+    <div class="step"><b>Diagnose</b><span>28 rules find the real problems.</span></div>
     <div class="step"><b>Explain</b><span>Plain English &amp; العربية, offline.</span></div>
     <div class="step"><b>Prescribe</b><span>Safe, reversible fixes via polkit.</span></div>
     <div class="step"><b>Follow-up</b><span>Scheduled checkups &amp; alerts.</span></div>

@@ -42,6 +42,11 @@ pub struct Strings {
     pub export_done: &'static str,
     pub export_failed: &'static str,
     pub treemap_a11y: &'static str,
+    pub disk_choose_folder: &'static str,
+    pub disk_cancel: &'static str,
+    pub disk_cancelled: &'static str,
+    pub disk_partial: &'static str,
+    pub disk_pick_a_folder: &'static str,
 }
 
 impl Strings {
@@ -85,6 +90,11 @@ impl Strings {
                 export_done: "Report exported",
                 export_failed: "Could not write the report",
                 treemap_a11y: "Treemap of the largest folders; the list below has the same data",
+                disk_choose_folder: "Choose a folder to scan…",
+                disk_cancel: "Stop the scan",
+                disk_cancelled: "Scan stopped — nothing measured yet.",
+                disk_partial: "Partial scan · ",
+                disk_pick_a_folder: "Choose a folder to scan.",
             },
             Lang::Ar => &Strings {
                 health_score: "الدرجة الصحية",
@@ -122,6 +132,11 @@ impl Strings {
                 export_done: "صُدِّر التقرير",
                 export_failed: "تعذّرت كتابة التقرير",
                 treemap_a11y: "خريطة شجرية لأكبر المجلدات؛ القائمة أدناه تعرض البيانات نفسها",
+                disk_choose_folder: "اختر مجلداً للفحص…",
+                disk_cancel: "إيقاف الفحص",
+                disk_cancelled: "أُوقف الفحص — لم يُقَس شيء بعد.",
+                disk_partial: "فحص جزئي · ",
+                disk_pick_a_folder: "اختر مجلداً لفحصه.",
             },
         }
     }
@@ -221,6 +236,49 @@ mod tests {
         // Arabic rows carry Arabic labels, not the English fallback.
         let ar = category_rows(&report, Lang::Ar);
         assert!(ar.iter().any(|r| r.label == "التخزين"));
+    }
+
+    #[test]
+    fn no_string_is_empty_in_either_language() {
+        // A missing translation shows as a blank label rather than a fallback,
+        // so an empty string is a bug in either language.
+        for lang in [Lang::En, Lang::Ar] {
+            let s = Strings::for_lang(lang);
+            for (name, value) in [
+                ("disk_choose_folder", s.disk_choose_folder),
+                ("disk_cancel", s.disk_cancel),
+                ("disk_cancelled", s.disk_cancelled),
+                ("disk_partial", s.disk_partial),
+                ("disk_pick_a_folder", s.disk_pick_a_folder),
+                ("treemap_a11y", s.treemap_a11y),
+                ("export_report", s.export_report),
+                ("apply_fix", s.apply_fix),
+                ("confirm_fix_title", s.confirm_fix_title),
+            ] {
+                assert!(!value.trim().is_empty(), "{name} is empty for {lang:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn arabic_strings_are_actually_arabic() {
+        // Guards against a copy-paste that leaves an English string in the
+        // Arabic table — which the emptiness check above would not catch.
+        let ar = Strings::for_lang(Lang::Ar);
+        for (name, value) in [
+            ("disk_choose_folder", ar.disk_choose_folder),
+            ("disk_cancel", ar.disk_cancel),
+            ("disk_pick_a_folder", ar.disk_pick_a_folder),
+            ("apply_fix", ar.apply_fix),
+            ("confirm_fix_title", ar.confirm_fix_title),
+        ] {
+            assert!(
+                value
+                    .chars()
+                    .any(|c| ('\u{0600}'..='\u{06FF}').contains(&c)),
+                "{name} has no Arabic characters: {value}"
+            );
+        }
     }
 
     #[test]

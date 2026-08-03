@@ -2,13 +2,19 @@
 //! `None` when not applicable). Plans are pure data — building one runs no
 //! commands — so every fix is unit-tested against fixture snapshots.
 
+use once_cell::sync::Lazy;
 use sysmedic_core::fix::{FixCommand, FixPlan};
+use sysmedic_core::lang::LocalizedText;
 use sysmedic_core::{thresholds, Severity, Snapshot};
 
 /// One safe fix SysMedic can offer.
 pub trait Fix: Send + Sync {
     /// Stable id, e.g. `fix.apt_clean`.
     fn id(&self) -> &'static str;
+    /// Short bilingual title. Snapshot-independent, so `undo` can name the
+    /// fix it is reversing in the user's language from the journal's fix id
+    /// alone, without rebuilding a plan.
+    fn title(&self) -> LocalizedText;
     /// Build the plan for this system, or `None` if there is nothing to do.
     fn plan(&self, snapshot: &Snapshot) -> Option<FixPlan>;
     /// The commands that reverse this fix, or empty if it is irreversible.
@@ -31,6 +37,9 @@ impl Fix for AptClean {
     fn id(&self) -> &'static str {
         "fix.apt_clean"
     }
+    fn title(&self) -> LocalizedText {
+        LocalizedText::new("Clear the APT download cache", "تفريغ ذاكرة تنزيل APT")
+    }
     fn plan(&self, s: &Snapshot) -> Option<FixPlan> {
         let bytes = s.packages.as_ref()?.apt_cache_bytes?;
         if bytes < thresholds::packages::APT_CACHE_FIX_BYTES {
@@ -38,11 +47,18 @@ impl Fix for AptClean {
         }
         Some(FixPlan {
             id: self.id().into(),
-            title: "Clear the APT download cache".into(),
-            description: format!(
-                "Delete cached .deb files in /var/cache/apt/archives, freeing about {:.1} GiB. \
-                 Packages re-download on demand if needed.",
-                gib(bytes)
+            title: self.title(),
+            description: LocalizedText::new(
+                format!(
+                    "Delete cached .deb files in /var/cache/apt/archives, freeing about \
+                     {:.1} GiB. Packages re-download on demand if needed.",
+                    gib(bytes)
+                ),
+                format!(
+                    "حذف ملفات .deb المخزّنة في ‎/var/cache/apt/archives، ما يحرّر نحو \
+                     {:.1} غيغابايت. تُعاد الحزم تنزيلاً عند الحاجة إليها.",
+                    gib(bytes)
+                ),
             ),
             commands: vec![FixCommand::new("apt-get", &["clean"])],
             affected_paths: vec!["/var/cache/apt/archives".into()],
@@ -59,6 +75,9 @@ impl Fix for JournalVacuum {
     fn id(&self) -> &'static str {
         "fix.journal_vacuum"
     }
+    fn title(&self) -> LocalizedText {
+        LocalizedText::new("Trim the systemd journal", "تقليص سجلّ systemd")
+    }
     fn plan(&self, s: &Snapshot) -> Option<FixPlan> {
         let bytes = s.logs.as_ref()?.journal_bytes?;
         if bytes < thresholds::journal::LARGE_BYTES {
@@ -66,11 +85,18 @@ impl Fix for JournalVacuum {
         }
         Some(FixPlan {
             id: self.id().into(),
-            title: "Trim the systemd journal".into(),
-            description: format!(
-                "The journal currently uses {:.1} GiB. This keeps the most recent 200 MB of \
-                 logs and deletes older archived entries.",
-                gib(bytes)
+            title: self.title(),
+            description: LocalizedText::new(
+                format!(
+                    "The journal currently uses {:.1} GiB. This keeps the most recent 200 MB \
+                     of logs and deletes older archived entries.",
+                    gib(bytes)
+                ),
+                format!(
+                    "يستهلك السجلّ حالياً {:.1} غيغابايت. سيُبقي هذا الإجراء أحدث 200 ميغابايت \
+                     من السجلّات ويحذف المدخلات المؤرشفة الأقدم.",
+                    gib(bytes)
+                ),
             ),
             commands: vec![FixCommand::new("journalctl", &["--vacuum-size=200M"])],
             affected_paths: vec!["/var/log/journal".into()],
@@ -87,6 +113,12 @@ impl Fix for AutoremoveKernels {
     fn id(&self) -> &'static str {
         "fix.autoremove"
     }
+    fn title(&self) -> LocalizedText {
+        LocalizedText::new(
+            "Remove old kernels and orphaned packages",
+            "إزالة النوى القديمة والحزم اليتيمة",
+        )
+    }
     fn plan(&self, s: &Snapshot) -> Option<FixPlan> {
         let kernels = &s.packages.as_ref()?.old_kernels;
         if kernels.len() <= thresholds::packages::OLD_KERNELS_KEPT {
@@ -94,11 +126,18 @@ impl Fix for AutoremoveKernels {
         }
         Some(FixPlan {
             id: self.id().into(),
-            title: "Remove old kernels and orphaned packages".into(),
-            description: format!(
-                "Purge {} old kernel image(s) and any auto-installed packages no longer needed. \
-                 The running kernel and one fallback are always kept.",
-                kernels.len()
+            title: self.title(),
+            description: LocalizedText::new(
+                format!(
+                    "Purge {} old kernel image(s) and any auto-installed packages no longer \
+                     needed. The running kernel and one fallback are always kept.",
+                    kernels.len()
+                ),
+                format!(
+                    "إزالة {} من صور النواة القديمة وأي حزم مُثبَّتة تلقائياً لم تعد لازمة. \
+                     تُحفَظ دائماً النواة العاملة ونواة احتياطية واحدة.",
+                    kernels.len()
+                ),
             ),
             commands: vec![FixCommand::new("apt-get", &["autoremove", "--purge", "-y"])],
             affected_paths: vec!["/boot".into(), "/lib/modules".into()],
@@ -115,6 +154,12 @@ impl Fix for SnapRetain {
     fn id(&self) -> &'static str {
         "fix.snap_retain"
     }
+    fn title(&self) -> LocalizedText {
+        LocalizedText::new(
+            "Keep fewer old snap revisions",
+            "الإبقاء على عدد أقل من نسخ snap القديمة",
+        )
+    }
     fn undo(&self) -> Vec<FixCommand> {
         vec![FixCommand::new(
             "snap",
@@ -128,11 +173,18 @@ impl Fix for SnapRetain {
         }
         Some(FixPlan {
             id: self.id().into(),
-            title: "Keep fewer old snap revisions".into(),
-            description: format!(
-                "Set snapd to retain only 2 revisions per snap (currently {} disabled \
-                 revision(s) are held). snapd prunes the extras on the next refresh.",
-                snap.disabled_revisions
+            title: self.title(),
+            description: LocalizedText::new(
+                format!(
+                    "Set snapd to retain only 2 revisions per snap (currently {} disabled \
+                     revision(s) are held). snapd prunes the extras on the next refresh.",
+                    snap.disabled_revisions
+                ),
+                format!(
+                    "ضبط snapd للاحتفاظ بنسختين فقط لكل snap (يُحتفظ حالياً بـ {} نسخة \
+                     معطّلة). يحذف snapd الزائد عند التحديث التالي.",
+                    snap.disabled_revisions
+                ),
             ),
             commands: vec![FixCommand::new(
                 "snap",
@@ -152,6 +204,12 @@ impl Fix for FlatpakRemoveUnused {
     fn id(&self) -> &'static str {
         "fix.flatpak_unused"
     }
+    fn title(&self) -> LocalizedText {
+        LocalizedText::new(
+            "Remove unused Flatpak runtimes",
+            "إزالة بيئات تشغيل Flatpak غير المستخدمة",
+        )
+    }
     fn plan(&self, s: &Snapshot) -> Option<FixPlan> {
         let refs = &s.flatpak.as_ref()?.unused_refs;
         if refs.is_empty() {
@@ -159,10 +217,16 @@ impl Fix for FlatpakRemoveUnused {
         }
         Some(FixPlan {
             id: self.id().into(),
-            title: "Remove unused Flatpak runtimes".into(),
-            description: format!(
-                "Uninstall {} Flatpak runtime(s) that no installed app needs.",
-                refs.len()
+            title: self.title(),
+            description: LocalizedText::new(
+                format!(
+                    "Uninstall {} Flatpak runtime(s) that no installed app needs.",
+                    refs.len()
+                ),
+                format!(
+                    "إلغاء تثبيت {} من بيئات تشغيل Flatpak لا يحتاجها أي تطبيق مُثبَّت.",
+                    refs.len()
+                ),
             ),
             commands: vec![FixCommand::new("flatpak", &["uninstall", "--unused", "-y"])],
             affected_paths: vec!["/var/lib/flatpak".into()],
@@ -179,6 +243,9 @@ impl Fix for EnableUfw {
     fn id(&self) -> &'static str {
         "fix.enable_ufw"
     }
+    fn title(&self) -> LocalizedText {
+        LocalizedText::new("Enable the firewall", "تفعيل الجدار الناري")
+    }
     fn undo(&self) -> Vec<FixCommand> {
         vec![FixCommand::new("ufw", &["disable"])]
     }
@@ -188,10 +255,13 @@ impl Fix for EnableUfw {
         }
         Some(FixPlan {
             id: self.id().into(),
-            title: "Enable the firewall".into(),
-            description: "Turn on ufw with its default policy: deny incoming, allow outgoing. \
-                 Suitable for a desktop with no server software."
-                .into(),
+            title: self.title(),
+            description: LocalizedText::new(
+                "Turn on ufw with its default policy: deny incoming, allow outgoing. \
+                 Suitable for a desktop with no server software.",
+                "تشغيل ufw بسياسته الافتراضية: منع الوارد، والسماح بالصادر. مناسب لجهاز \
+                 مكتبي لا يشغّل برمجيات خادم.",
+            ),
             commands: vec![FixCommand::new("ufw", &["--force", "enable"])],
             affected_paths: vec!["/etc/ufw".into(), "/lib/systemd/system/ufw.service".into()],
             reversible: true,
@@ -202,21 +272,28 @@ impl Fix for EnableUfw {
     }
 }
 
-/// Every fix, in a stable order.
-pub fn all() -> Vec<Box<dyn Fix>> {
+/// The registry, built once. Previously `all()` boxed six trait objects on
+/// every call, and `find`/`undo_commands` went through it — so simply
+/// rendering the findings list rebuilt the whole registry per finding.
+static REGISTRY: Lazy<Vec<Box<dyn Fix>>> = Lazy::new(|| {
     vec![
-        Box::new(AptClean),
+        Box::new(AptClean) as Box<dyn Fix>,
         Box::new(JournalVacuum),
         Box::new(AutoremoveKernels),
         Box::new(SnapRetain),
         Box::new(FlatpakRemoveUnused),
         Box::new(EnableUfw),
     ]
+});
+
+/// Every fix, in a stable order.
+pub fn all() -> &'static [Box<dyn Fix>] {
+    &REGISTRY
 }
 
 /// Look up a fix by id.
-pub fn find(id: &str) -> Option<Box<dyn Fix>> {
-    all().into_iter().find(|f| f.id() == id)
+pub fn find(id: &str) -> Option<&'static dyn Fix> {
+    REGISTRY.iter().find(|f| f.id() == id).map(|b| b.as_ref())
 }
 
 /// The compiled-in undo commands for a fix id, or `None` if the id is unknown.
@@ -230,14 +307,19 @@ pub fn undo_commands(id: &str) -> Option<Vec<FixCommand>> {
 }
 
 /// Every fix id, for validation in the privileged helper.
-pub const FIX_IDS: &[&str] = &[
-    "fix.apt_clean",
-    "fix.journal_vacuum",
-    "fix.autoremove",
-    "fix.snap_retain",
-    "fix.flatpak_unused",
-    "fix.enable_ufw",
-];
+///
+/// **Derived** from the registry rather than written out by hand. The previous
+/// hand-maintained list was a second source of truth for the set the helper
+/// validates against before doing anything as root; a fix added to `all()` but
+/// forgotten here would have been rejected, and — worse — an id left here
+/// after its fix was removed would have been accepted.
+static FIX_ID_LIST: Lazy<Vec<&'static str>> =
+    Lazy::new(|| REGISTRY.iter().map(|f| f.id()).collect());
+
+/// Every fix id the helper will accept.
+pub fn fix_ids() -> &'static [&'static str] {
+    &FIX_ID_LIST
+}
 
 /// The fix that resolves a given finding, if one exists. Lets the UI put an
 /// "Apply fix" button on the findings it can remedy.
@@ -246,7 +328,7 @@ pub fn fix_for_finding(finding_id: &str) -> Option<&'static str> {
         "packages.apt_cache_large" => Some("fix.apt_clean"),
         "logs.journal_large" => Some("fix.journal_vacuum"),
         "packages.old_kernels" => Some("fix.autoremove"),
-        "snap.old_revisions" => Some("fix.snap_retain"),
+        "storage.snap_old_revisions" => Some("fix.snap_retain"),
         "flatpak.unused_runtimes" => Some("fix.flatpak_unused"),
         "security.firewall_inactive" => Some("fix.enable_ufw"),
         _ => None,
@@ -261,11 +343,22 @@ mod tests {
     #[test]
     fn registry_and_ids_agree() {
         let ids: Vec<&str> = all().iter().map(|f| f.id()).collect();
-        assert_eq!(ids, FIX_IDS);
-        for id in FIX_IDS {
+        assert_eq!(ids, fix_ids());
+        for id in fix_ids() {
             assert!(find(id).is_some(), "no fix for {id}");
         }
         assert!(find("fix.nonexistent").is_none());
+    }
+
+    #[test]
+    fn fix_ids_are_unique() {
+        // Two fixes sharing an id would make `find` (and therefore the
+        // helper's undo path) resolve to whichever came first.
+        let mut ids: Vec<&str> = fix_ids().to_vec();
+        let before = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), before, "duplicate fix id in the registry");
     }
 
     #[test]
@@ -289,12 +382,12 @@ mod tests {
             "packages.apt_cache_large",
             "logs.journal_large",
             "packages.old_kernels",
-            "snap.old_revisions",
+            "storage.snap_old_revisions",
             "flatpak.unused_runtimes",
             "security.firewall_inactive",
         ] {
             let fix_id = fix_for_finding(finding).expect("mapping exists");
-            assert!(FIX_IDS.contains(&fix_id), "{fix_id} not a real fix");
+            assert!(fix_ids().contains(&fix_id), "{fix_id} not a real fix");
         }
         assert!(fix_for_finding("cpu.high_load").is_none());
     }

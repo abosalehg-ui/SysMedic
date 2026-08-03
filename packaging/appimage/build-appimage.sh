@@ -31,14 +31,12 @@ install -Dm644 data/io.github.abosalehg_ui.SysMedic.desktop \
 cp "$APPDIR/usr/share/applications/io.github.abosalehg_ui.SysMedic.desktop" \
    "$APPDIR/io.github.abosalehg_ui.SysMedic.desktop"
 
-# Minimal placeholder icon (a real PNG icon asset is tracked in issue #20).
+# The real application icon (AppImage expects it at the AppDir root, and the
+# hicolor copy is what a desktop-integrated AppImage picks up).
 ICON="$APPDIR/io.github.abosalehg_ui.SysMedic.svg"
-cat > "$ICON" <<'SVG'
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="24" fill="#3584e4"/>
-  <path d="M64 30v68M30 64h68" stroke="#fff" stroke-width="14" stroke-linecap="round"/>
-</svg>
-SVG
+install -Dm644 data/icons/hicolor/scalable/apps/io.github.abosalehg_ui.SysMedic.svg "$ICON"
+install -Dm644 data/icons/hicolor/scalable/apps/io.github.abosalehg_ui.SysMedic.svg \
+  "$APPDIR/usr/share/icons/hicolor/scalable/apps/io.github.abosalehg_ui.SysMedic.svg"
 
 cat > "$APPDIR/AppRun" <<'SH'
 #!/usr/bin/env bash

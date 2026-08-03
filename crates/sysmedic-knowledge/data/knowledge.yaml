@@ -193,7 +193,7 @@
     remedy: "نفّذ paccache -rk2 (من pacman-contrib) للاحتفاظ بآخر نسختين من كل حزمة، أو pacman -Sc لحذف أرشيفات الحزم غير المثبتة."
     risk_if_ignored: "ستستمر الذاكرة المؤقتة بالنمو مع كل تحديث حتى يمتلئ القرص."
 
-- id: packages.security_updates
+- id: security.updates_pending
   en:
     cause: "Packages with published security fixes are installed but not yet upgraded."
     dangerous: "Yes — these fix known, often actively exploited vulnerabilities."
@@ -257,7 +257,7 @@
     remedy: "افحص نهاية الملف لتحديد الخدمة المزعجة وأصلحها وتأكد من عمل logrotate."
     risk_if_ignored: "يستمر الملف بالنمو ويبقى العطل الحقيقي خلفه دون إصلاح."
 
-- id: snap.old_revisions
+- id: storage.snap_old_revisions
   en:
     cause: "snapd keeps previous revisions of every snap after updates (default: up to 3)."
     dangerous: "No — purely disk usage."

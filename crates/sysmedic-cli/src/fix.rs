@@ -10,12 +10,18 @@ use std::process::Command;
 use anyhow::{bail, Result};
 use owo_colors::{OwoColorize, Stream};
 use sysmedic_core::{Lang, Snapshot};
-use sysmedic_fixes::{self as fixes, Journal, RealRunner};
+use sysmedic_fixes::{self as fixes, helper_path, Journal, RealRunner};
 
-const DEFAULT_HELPER: &str = "/usr/libexec/sysmedic-fix-helper";
+/// Resolve the journal path, or explain why there isn't one.
+fn journal() -> Result<Journal> {
+    let path = fixes::journal_path().ok_or_else(|| {
+        anyhow::anyhow!("no journal location: neither HOME nor XDG_STATE_HOME is set")
+    })?;
+    Ok(Journal::load(path)?)
+}
 
-fn helper_path() -> String {
-    std::env::var("SYSMEDIC_HELPER").unwrap_or_else(|_| DEFAULT_HELPER.to_string())
+fn user_lang() -> Lang {
+    Lang::from_locale(&std::env::var("LANG").unwrap_or_default())
 }
 
 fn collect() -> Snapshot {
@@ -34,6 +40,7 @@ pub fn list() -> Result<()> {
         );
         return Ok(());
     }
+    let lang = user_lang();
     println!("Applicable fixes (run `sysmedic fix <id> --dry-run` to preview):\n");
     for plan in plans {
         let rev = if plan.reversible {
@@ -49,7 +56,7 @@ pub fn list() -> Result<()> {
             "  {}  [{}]  {}",
             plan.id.if_supports_color(Stream::Stdout, |t| t.bold()),
             rev,
-            plan.title
+            plan.title_in(lang)
         );
     }
     Ok(())
@@ -63,8 +70,7 @@ pub fn apply(id: &str, dry_run: bool, yes: bool) -> Result<()> {
     };
 
     // The consent preview follows the user's locale, like the knowledge base.
-    let lang = Lang::from_locale(&std::env::var("LANG").unwrap_or_default());
-    println!("{}", plan.preview_in(lang));
+    println!("{}", plan.preview_in(user_lang()));
 
     if dry_run {
         println!(
@@ -82,7 +88,7 @@ pub fn apply(id: &str, dry_run: bool, yes: bool) -> Result<()> {
     }
 
     if fixes::is_root() {
-        let mut journal = Journal::load(fixes::journal_path())?;
+        let mut journal = journal()?;
         let outcome = fixes::apply(&plan, &RealRunner, &mut journal)?;
         println!(
             "{} applied {}.",
@@ -107,12 +113,14 @@ pub fn apply(id: &str, dry_run: bool, yes: bool) -> Result<()> {
 pub fn undo(yes: bool) -> Result<()> {
     if !yes {
         // Preview what would be undone from the journal we can read.
-        match Journal::load(fixes::journal_path()) {
+        match journal() {
             Ok(journal) => match journal.last_undoable() {
                 Some((_, entry)) => {
+                    let title = fixes::undo_title_in(&journal, user_lang())
+                        .unwrap_or_else(|| entry.title.clone());
                     println!(
                         "Would undo: {} ({})",
-                        entry.title.if_supports_color(Stream::Stdout, |t| t.bold()),
+                        title.if_supports_color(Stream::Stdout, |t| t.bold()),
                         entry.fix_id
                     );
                     println!(
@@ -132,8 +140,8 @@ pub fn undo(yes: bool) -> Result<()> {
     }
 
     if fixes::is_root() {
-        let mut journal = Journal::load(fixes::journal_path())?;
-        let title = fixes::undo(&RealRunner, &mut journal)?;
+        let mut journal = journal()?;
+        let title = fixes::undo(&RealRunner, &mut journal, user_lang())?;
         println!(
             "{} reverted {}.",
             "✓".if_supports_color(Stream::Stdout, |t| t.green()),

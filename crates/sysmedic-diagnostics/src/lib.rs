@@ -59,7 +59,7 @@ pub fn default_diagnostics() -> Vec<Box<dyn Diagnostic>> {
             rules::packages::pacman_cache_large
         ),
         rule!(
-            "packages-security-updates",
+            "security-updates-pending",
             rules::packages::security_updates
         ),
         rule!(
@@ -68,7 +68,7 @@ pub fn default_diagnostics() -> Vec<Box<dyn Diagnostic>> {
         ),
         rule!("logs-journal-large", rules::logs::journal_large),
         rule!("logs-large-files", rules::logs::large_files),
-        rule!("snap-old-revisions", rules::snap::old_revisions),
+        rule!("storage-snap-old-revisions", rules::snap::old_revisions),
         rule!("flatpak-unused-runtimes", rules::flatpak::unused_runtimes),
         rule!("battery-degraded", rules::battery::degraded),
         rule!("network-no-default-route", rules::network::no_default_route),
@@ -107,11 +107,11 @@ pub const FINDING_IDS: &[&str] = &[
     "packages.old_kernels",
     "packages.apt_cache_large",
     "packages.pacman_cache_large",
-    "packages.security_updates",
+    "security.updates_pending",
     "packages.upgrades_pending",
     "logs.journal_large",
     "logs.large_files",
-    "snap.old_revisions",
+    "storage.snap_old_revisions",
     "flatpak.unused_runtimes",
     "battery.degraded",
     "network.no_default_route",
@@ -124,3 +124,80 @@ pub const FINDING_IDS: &[&str] = &[
     "smart.reallocated_sectors",
     "smart.ssd_wear",
 ];
+
+#[cfg(test)]
+mod doc_guards {
+    /// The rule count is quoted in prose that no compiler checks. It had
+    /// drifted to "27" in the README and both site pages, and to "21" in
+    /// ISSUES.md and ROADMAP.md, while the code declared 28.
+    ///
+    /// When this fails, update the number here **and** in:
+    ///   README.md · docs/site/index.html · docs/site/ar.html
+    ///   docs/ISSUES.md · docs/ROADMAP.md
+    #[test]
+    fn declared_rule_count_matches_the_documentation() {
+        assert_eq!(
+            super::FINDING_IDS.len(),
+            28,
+            "rule count changed — update the docs listed above"
+        );
+    }
+
+    #[test]
+    fn every_rule_emits_a_declared_id_and_ids_are_unique() {
+        let mut ids: Vec<&str> = super::FINDING_IDS.to_vec();
+        let before = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), before, "duplicate id in FINDING_IDS");
+        assert_eq!(
+            super::default_diagnostics().len(),
+            before,
+            "rule count and declared-id count disagree"
+        );
+    }
+
+    #[test]
+    fn finding_id_prefixes_match_their_category() {
+        // The prefix is the category the finding is scored under. Two ids used
+        // to disagree (`packages.security_updates` scored as Security,
+        // `snap.old_revisions` as Storage), which broke grouping by prefix.
+        use sysmedic_core::Category;
+        let expected = |c: Category| match c {
+            Category::Boot => "boot",
+            Category::Cpu => "cpu",
+            Category::Memory => "memory",
+            Category::Storage => "storage",
+            Category::Thermal => "thermal",
+            Category::Processes => "processes",
+            Category::Services => "services",
+            Category::Packages => "packages",
+            Category::Logs => "logs",
+            Category::Network => "network",
+            Category::Security => "security",
+            Category::Battery => "battery",
+        };
+        // Fire every rule against a deliberately unhealthy snapshot.
+        let s = crate::rules::tests_support::unhealthy_snapshot();
+        let mut checked = 0;
+        for rule in super::default_diagnostics() {
+            for finding in rule.evaluate(&s) {
+                let prefix = finding.id.split('.').next().unwrap_or("");
+                // `smart.*` and `flatpak.*` name the data source rather than
+                // the category, which is a deliberate and consistent choice.
+                if matches!(prefix, "smart" | "flatpak") {
+                    continue;
+                }
+                assert_eq!(
+                    prefix,
+                    expected(finding.category),
+                    "id {} is scored under {:?}",
+                    finding.id,
+                    finding.category
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 15, "fixture fired too few rules ({checked})");
+    }
+}

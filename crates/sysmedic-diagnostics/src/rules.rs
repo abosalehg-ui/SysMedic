@@ -366,7 +366,7 @@ pub mod packages {
         };
         match pkgs.security_upgrades {
             Some(n) if n > 0 => vec![Finding::new(
-                "packages.security_updates",
+                "security.updates_pending",
                 Category::Security,
                 Severity::High,
                 format!("{n} security update(s) pending"),
@@ -470,7 +470,7 @@ pub mod snap {
             .map(|b| format!(" Snap store on disk: {:.1} GiB.", gb(b)))
             .unwrap_or_default();
         vec![Finding::new(
-            "snap.old_revisions",
+            "storage.snap_old_revisions",
             Category::Storage,
             Severity::Low,
             format!(
@@ -739,6 +739,116 @@ pub mod smart {
     }
 }
 
+/// Fixtures shared between this module's tests and the crate-level guards.
+#[cfg(test)]
+pub mod tests_support {
+    use sysmedic_core::snapshot::*;
+    use sysmedic_core::Snapshot;
+
+    /// A deliberately unhealthy snapshot that trips every declared rule.
+    /// Shared so the crate-level guards assert against the same fixture the
+    /// rule tests use, rather than a second copy that could drift.
+    ///
+    /// Built field-by-field rather than as one struct literal so each
+    /// collector section is visibly made unhealthy on its own line.
+    #[allow(clippy::field_reassign_with_default)]
+    pub fn unhealthy_snapshot() -> Snapshot {
+        let mut s = Snapshot::default();
+        s.disks = Some(vec![DiskInfo {
+            mount_point: "/".into(),
+            fs_type: "ext4".into(),
+            total_bytes: 100,
+            available_bytes: 1,
+        }]);
+        s.memory = Some(MemoryInfo {
+            total_kb: 1000,
+            available_kb: 10,
+            swap_total_kb: 1000,
+            swap_free_kb: 100,
+        });
+        s.cpu = Some(CpuInfo {
+            model: "t".into(),
+            logical_cores: 1,
+            load_1: 9.0,
+            load_5: 9.0,
+            load_15: 9.0,
+        });
+        s.thermal = Some(ThermalInfo {
+            sensors: vec![ThermalSensor {
+                name: "x86_pkg_temp".into(),
+                temp_c: 99.0,
+            }],
+        });
+        s.processes = Some(ProcessStats {
+            total: 10,
+            zombies: vec!["1 z".into()],
+            top_memory: vec![],
+        });
+        s.services = Some(ServiceStats {
+            running: 10,
+            failed: vec!["broken.service".into()],
+        });
+        s.boot = Some(BootInfo {
+            total_seconds: 500.0,
+            slowest_units: vec![],
+        });
+        s.packages = Some(PackageInfo {
+            manager: Some("apt".into()),
+            broken: vec!["libfoo".into()],
+            old_kernels: vec!["a".into(), "b".into(), "c".into()],
+            // Artificial: no real system has both caches, but the
+            // exhaustiveness fixture must trip every declared rule.
+            pacman_cache_bytes: Some(3 * 1024 * 1024 * 1024),
+            apt_cache_bytes: Some(2 * 1024 * 1024 * 1024),
+            upgradable: Some(50),
+            security_upgrades: Some(2),
+        });
+        s.logs = Some(LogInfo {
+            journal_bytes: Some(5 * 1024 * 1024 * 1024),
+            large_files: vec![LargeFile {
+                path: "/var/log/huge.log".into(),
+                bytes: 2 * 1024 * 1024 * 1024,
+            }],
+        });
+        s.snap = Some(SnapInfo {
+            disabled_revisions: 3,
+            snaps_dir_bytes: None,
+        });
+        s.flatpak = Some(FlatpakInfo {
+            unused_refs: vec!["runtime/org.freedesktop.Platform/x86_64/23.08".into()],
+        });
+        s.battery = Some(BatteryInfo {
+            capacity_percent: Some(50),
+            health_percent: Some(35.0),
+        });
+        s.network = Some(NetworkInfo {
+            has_default_route: false,
+            dns_servers: vec![],
+        });
+        s.security = Some(SecurityInfo {
+            firewall_active: Some(false),
+            ssh_permit_root_login: Some(true),
+            ssh_password_auth: Some(true),
+        });
+        s.smart = Some(vec![SmartDevice {
+            device: "/dev/sda".into(),
+            model: "Test SSD".into(),
+            health_passed: Some(false),
+            temperature_c: Some(40),
+            reallocated_sectors: Some(60),
+            wear_percent: Some(95),
+            power_on_hours: Some(1000),
+        }]);
+        s.ports = Some(vec![ListeningPort {
+            proto: "tcp",
+            address: "0.0.0.0".into(),
+            port: 22,
+            exposed: true,
+        }]);
+        s
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use sysmedic_core::snapshot::*;
@@ -855,98 +965,7 @@ mod tests {
     #[test]
     fn every_emitted_id_is_declared() {
         // Fire every rule with a maximally unhealthy snapshot and check ids.
-        let mut s = snapshot();
-        s.disks = Some(vec![DiskInfo {
-            mount_point: "/".into(),
-            fs_type: "ext4".into(),
-            total_bytes: 100,
-            available_bytes: 1,
-        }]);
-        s.memory = Some(MemoryInfo {
-            total_kb: 1000,
-            available_kb: 10,
-            swap_total_kb: 1000,
-            swap_free_kb: 100,
-        });
-        s.cpu = Some(CpuInfo {
-            model: "t".into(),
-            logical_cores: 1,
-            load_1: 9.0,
-            load_5: 9.0,
-            load_15: 9.0,
-        });
-        s.thermal = Some(ThermalInfo {
-            sensors: vec![ThermalSensor {
-                name: "x86_pkg_temp".into(),
-                temp_c: 99.0,
-            }],
-        });
-        s.processes = Some(ProcessStats {
-            total: 10,
-            zombies: vec!["1 z".into()],
-            top_memory: vec![],
-        });
-        s.services = Some(ServiceStats {
-            running: 10,
-            failed: vec!["broken.service".into()],
-        });
-        s.boot = Some(BootInfo {
-            total_seconds: 500.0,
-            slowest_units: vec![],
-        });
-        s.packages = Some(PackageInfo {
-            manager: Some("apt".into()),
-            broken: vec!["libfoo".into()],
-            old_kernels: vec!["a".into(), "b".into(), "c".into()],
-            // Artificial: no real system has both caches, but the
-            // exhaustiveness fixture must trip every declared rule.
-            pacman_cache_bytes: Some(3 * 1024 * 1024 * 1024),
-            apt_cache_bytes: Some(2 * 1024 * 1024 * 1024),
-            upgradable: Some(50),
-            security_upgrades: Some(2),
-        });
-        s.logs = Some(LogInfo {
-            journal_bytes: Some(5 * 1024 * 1024 * 1024),
-            large_files: vec![LargeFile {
-                path: "/var/log/huge.log".into(),
-                bytes: 2 * 1024 * 1024 * 1024,
-            }],
-        });
-        s.snap = Some(SnapInfo {
-            disabled_revisions: 3,
-            snaps_dir_bytes: None,
-        });
-        s.flatpak = Some(FlatpakInfo {
-            unused_refs: vec!["runtime/org.freedesktop.Platform/x86_64/23.08".into()],
-        });
-        s.battery = Some(BatteryInfo {
-            capacity_percent: Some(50),
-            health_percent: Some(35.0),
-        });
-        s.network = Some(NetworkInfo {
-            has_default_route: false,
-            dns_servers: vec![],
-        });
-        s.security = Some(SecurityInfo {
-            firewall_active: Some(false),
-            ssh_permit_root_login: Some(true),
-            ssh_password_auth: Some(true),
-        });
-        s.smart = Some(vec![SmartDevice {
-            device: "/dev/sda".into(),
-            model: "Test SSD".into(),
-            health_passed: Some(false),
-            temperature_c: Some(40),
-            reallocated_sectors: Some(60),
-            wear_percent: Some(95),
-            power_on_hours: Some(1000),
-        }]);
-        s.ports = Some(vec![ListeningPort {
-            proto: "tcp",
-            address: "0.0.0.0".into(),
-            port: 22,
-            exposed: true,
-        }]);
+        let s = super::tests_support::unhealthy_snapshot();
 
         let mut fired: Vec<String> = vec![];
         for rule in crate::default_diagnostics() {

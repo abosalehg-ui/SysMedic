@@ -52,3 +52,5 @@ parts:
         "$CRAFT_PART_INSTALL/share/applications/io.github.abosalehg_ui.SysMedic.desktop"
       install -Dm644 data/io.github.abosalehg_ui.SysMedic.metainfo.xml \
         "$CRAFT_PART_INSTALL/share/metainfo/io.github.abosalehg_ui.SysMedic.metainfo.xml"
+      install -Dm644 data/icons/hicolor/scalable/apps/io.github.abosalehg_ui.SysMedic.svg \
+        "$CRAFT_PART_INSTALL/share/icons/hicolor/scalable/apps/io.github.abosalehg_ui.SysMedic.svg"

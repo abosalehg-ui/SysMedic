@@ -43,6 +43,14 @@ install -Dm644 data/io.github.abosalehg_ui.SysMedic.metainfo.xml \
 install -Dm644 data/io.github.abosalehg_ui.sysmedic.policy \
   "$STAGE/usr/share/polkit-1/actions/io.github.abosalehg_ui.sysmedic.policy"
 
+# Icons. The .desktop file's `Icon=` key and the GUI's About dialog both name
+# io.github.abosalehg_ui.SysMedic, so without these the app showed a generic
+# placeholder in the launcher, the dock and the About window.
+install -Dm644 data/icons/hicolor/scalable/apps/io.github.abosalehg_ui.SysMedic.svg \
+  "$STAGE/usr/share/icons/hicolor/scalable/apps/io.github.abosalehg_ui.SysMedic.svg"
+install -Dm644 data/icons/hicolor/symbolic/apps/io.github.abosalehg_ui.SysMedic-symbolic.svg \
+  "$STAGE/usr/share/icons/hicolor/symbolic/apps/io.github.abosalehg_ui.SysMedic-symbolic.svg"
+
 # --- Docs & licence -------------------------------------------------------
 install -Dm644 LICENSE "$STAGE/usr/share/doc/sysmedic/copyright"
 install -Dm644 README.md "$STAGE/usr/share/doc/sysmedic/README.md"

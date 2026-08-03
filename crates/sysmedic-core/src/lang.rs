@@ -23,6 +23,49 @@ impl Lang {
     }
 }
 
+/// A short piece of user-facing text carried in both supported languages.
+///
+/// Used where the text is *generated* rather than looked up — chiefly fix-plan
+/// titles and descriptions, which interpolate live numbers ("frees about
+/// 2.4 GiB") and so cannot come from a static catalogue. The consent preview
+/// for a privileged, sometimes irreversible change is the one screen a user
+/// must be able to read in their own language, so the plan carries both rather
+/// than leaving the substance English and translating only the labels around it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LocalizedText {
+    pub en: String,
+    pub ar: String,
+}
+
+impl LocalizedText {
+    pub fn new(en: impl Into<String>, ar: impl Into<String>) -> Self {
+        LocalizedText {
+            en: en.into(),
+            ar: ar.into(),
+        }
+    }
+
+    /// The text in `lang`.
+    pub fn get(&self, lang: Lang) -> &str {
+        match lang {
+            Lang::En => &self.en,
+            Lang::Ar => &self.ar,
+        }
+    }
+}
+
+#[cfg(test)]
+mod localized_tests {
+    use super::*;
+
+    #[test]
+    fn returns_the_requested_language() {
+        let t = LocalizedText::new("Enable the firewall", "تفعيل الجدار الناري");
+        assert_eq!(t.get(Lang::En), "Enable the firewall");
+        assert_eq!(t.get(Lang::Ar), "تفعيل الجدار الناري");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SysMedic application icon.
+
+  A stethoscope curled around a health cross: the "doctor for your Linux
+  system" idea in one mark. Drawn on the 128x128 GNOME app-icon grid with a
+  16px safe margin, using Adwaita palette shades so it sits correctly next to
+  stock GNOME icons in the dock and the app grid.
+
+  Colors: blue3 #3584e4 / blue4 #1c71d8 body, white cross, green4 #26a269
+  accent on the chestpiece.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3584e4"/>
+      <stop offset="1" stop-color="#1c71d8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded-square app base. -->
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#body)"/>
+
+  <!-- Health cross, the primary read at small sizes. -->
+  <path d="M56 34h16v22h22v16H72v22H56V72H34V56h22z" fill="#ffffff"/>
+
+  <!-- Stethoscope tubing, curling from behind the cross to the chestpiece. -->
+  <path d="M40 30v20a24 24 0 0 0 48 0V30"
+        fill="none" stroke="#ffffff" stroke-opacity=".55"
+        stroke-width="7" stroke-linecap="round"/>
+
+  <!-- Chestpiece. -->
+  <circle cx="96" cy="92" r="13" fill="#26a269"/>
+  <circle cx="96" cy="92" r="6" fill="#ffffff" fill-opacity=".85"/>
+</svg>

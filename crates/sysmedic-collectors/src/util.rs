@@ -10,11 +10,7 @@ use std::time::{Duration, Instant};
 /// sequentially. On timeout the child is killed and the call returns `None`.
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// A minimal, known-good `PATH`. External tools are looked up here rather than
-/// through the inherited `PATH`, so a poisoned `PATH` cannot substitute an
-/// attacker-controlled binary — this matters because the privileged
-/// `sysmedic-fix-helper` runs these same collectors as root.
-const SAFE_PATH: &str = "/usr/sbin:/usr/bin:/sbin:/bin";
+use sysmedic_core::paths::SAFE_PATH;
 
 /// The captured result of running a command: whether it exited successfully
 /// and its stdout. Unlike [`run`], this is returned even for a non-zero exit,

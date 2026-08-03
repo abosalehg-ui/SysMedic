@@ -8,6 +8,7 @@
 use serde::Serialize;
 
 use crate::finding::Severity;
+use crate::lang::Lang;
 use crate::snapshot::Snapshot;
 use crate::thresholds;
 
@@ -19,8 +20,13 @@ pub struct Alert {
     pub body: String,
 }
 
-/// Conditions worth a proactive notification, most urgent first.
-pub fn evaluate(snapshot: &Snapshot) -> Vec<Alert> {
+/// Conditions worth a proactive notification, most urgent first, with their
+/// text in `lang`.
+///
+/// A desktop notification is the *only* part of the follow-up flow a user sees
+/// when they are not looking at SysMedic, so shipping it English-only left the
+/// one proactive touchpoint untranslated on an Arabic system.
+pub fn evaluate_in(snapshot: &Snapshot, lang: Lang) -> Vec<Alert> {
     let mut alerts = Vec::new();
 
     if let Some(disks) = &snapshot.disks {
@@ -34,8 +40,16 @@ pub fn evaluate(snapshot: &Snapshot) -> Vec<Alert> {
                     } else {
                         Severity::High
                     },
-                    title: format!("Disk almost full: {}", disk.mount_point),
-                    body: format!("{used:.0}% used on {}", disk.mount_point),
+                    title: match lang {
+                        Lang::En => format!("Disk almost full: {}", disk.mount_point),
+                        Lang::Ar => format!("القرص شارف على الامتلاء: {}", disk.mount_point),
+                    },
+                    body: match lang {
+                        Lang::En => format!("{used:.0}% used on {}", disk.mount_point),
+                        Lang::Ar => {
+                            format!("استُخدم {used:.0}% من {}", disk.mount_point)
+                        }
+                    },
                 });
             }
         }
@@ -51,8 +65,16 @@ pub fn evaluate(snapshot: &Snapshot) -> Vec<Alert> {
                     } else {
                         Severity::High
                     },
-                    title: "System overheating".to_string(),
-                    body: format!("{} at {:.0}°C", hottest.name, hottest.temp_c),
+                    title: match lang {
+                        Lang::En => "System overheating".to_string(),
+                        Lang::Ar => "ارتفاع حرارة النظام".to_string(),
+                    },
+                    body: match lang {
+                        Lang::En => format!("{} at {:.0}°C", hottest.name, hottest.temp_c),
+                        Lang::Ar => {
+                            format!("{} عند {:.0}°م", hottest.name, hottest.temp_c)
+                        }
+                    },
                 });
             }
         }
@@ -64,8 +86,14 @@ pub fn evaluate(snapshot: &Snapshot) -> Vec<Alert> {
             alerts.push(Alert {
                 id: "alert.low_memory",
                 urgency: Severity::High,
-                title: "Low memory".to_string(),
-                body: format!("Only {avail:.0}% of RAM available"),
+                title: match lang {
+                    Lang::En => "Low memory".to_string(),
+                    Lang::Ar => "الذاكرة منخفضة".to_string(),
+                },
+                body: match lang {
+                    Lang::En => format!("Only {avail:.0}% of RAM available"),
+                    Lang::Ar => format!("لم يتبقَّ سوى {avail:.0}% من الذاكرة"),
+                },
             });
         }
     }
@@ -76,8 +104,14 @@ pub fn evaluate(snapshot: &Snapshot) -> Vec<Alert> {
                 alerts.push(Alert {
                     id: "alert.security_updates",
                     urgency: Severity::High,
-                    title: format!("{n} security update(s) available"),
-                    body: "Install them to stay protected.".to_string(),
+                    title: match lang {
+                        Lang::En => format!("{n} security update(s) available"),
+                        Lang::Ar => format!("يتوفّر {n} تحديث أمني"),
+                    },
+                    body: match lang {
+                        Lang::En => "Install them to stay protected.".to_string(),
+                        Lang::Ar => "ثبّتها للحفاظ على حماية النظام.".to_string(),
+                    },
                 });
             }
         }
@@ -85,6 +119,11 @@ pub fn evaluate(snapshot: &Snapshot) -> Vec<Alert> {
 
     alerts.sort_by_key(|a| std::cmp::Reverse(a.urgency));
     alerts
+}
+
+/// [`evaluate_in`] in English. Kept for callers that have no locale context.
+pub fn evaluate(snapshot: &Snapshot) -> Vec<Alert> {
+    evaluate_in(snapshot, Lang::En)
 }
 
 #[cfg(test)]
@@ -112,6 +151,26 @@ mod tests {
         assert_eq!(alerts.len(), 1);
         assert_eq!(alerts[0].id, "alert.disk_full");
         assert_eq!(alerts[0].urgency, Severity::Critical);
+    }
+
+    #[test]
+    fn alert_text_is_localized() {
+        let s = Snapshot {
+            memory: Some(MemoryInfo {
+                total_kb: 1000,
+                available_kb: 10,
+                swap_total_kb: 0,
+                swap_free_kb: 0,
+            }),
+            ..Default::default()
+        };
+        let en = evaluate_in(&s, Lang::En);
+        assert_eq!(en[0].title, "Low memory");
+        let ar = evaluate_in(&s, Lang::Ar);
+        assert_eq!(ar[0].title, "الذاكرة منخفضة");
+        assert!(ar[0].body.contains('%'));
+        // Same condition, same id — only the presentation differs.
+        assert_eq!(en[0].id, ar[0].id);
     }
 
     #[test]

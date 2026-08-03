@@ -28,6 +28,22 @@ pub enum JournalError {
     },
 }
 
+/// How far an entry got. Written **before** the fix runs, so a crash or a
+/// failed journal write can never leave a change on the system that the
+/// journal has no record of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EntryState {
+    /// Recorded, but the commands had not finished when this was written.
+    /// Either they are still running, or the process died partway.
+    Pending,
+    /// Every command completed successfully.
+    #[default]
+    Applied,
+    /// A command failed; the fix may be partially applied.
+    Failed,
+}
+
 /// One applied fix, with everything needed to undo it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct JournalEntry {
@@ -39,6 +55,10 @@ pub struct JournalEntry {
     /// Set once the entry has been undone, so it is not undone twice.
     #[serde(default)]
     pub undone: bool,
+    /// Defaults to `Applied` so journals written by older versions (which had
+    /// no such field, and only ever recorded completed fixes) still load.
+    #[serde(default)]
+    pub state: EntryState,
 }
 
 /// The persisted list of applied fixes.
@@ -74,7 +94,37 @@ impl Journal {
         self.save()
     }
 
+    /// Record the *intent* to apply a fix, before any command runs, and return
+    /// the entry's index.
+    ///
+    /// This is the write-ahead half of the apply protocol. Recording after the
+    /// commands ran meant a failing journal write (a full `/var`, which is a
+    /// very live possibility in a tool people reach for *because* their disk
+    /// is full) left the system changed with nothing to undo it — the user saw
+    /// an error and reasonably concluded nothing had happened.
+    pub fn record_pending(&mut self, entry: JournalEntry) -> Result<usize, JournalError> {
+        self.entries.push(JournalEntry {
+            state: EntryState::Pending,
+            ..entry
+        });
+        self.save()?;
+        Ok(self.entries.len() - 1)
+    }
+
+    /// Move the entry at `index` to its terminal state and persist.
+    pub fn finish(&mut self, index: usize, state: EntryState) -> Result<(), JournalError> {
+        if let Some(entry) = self.entries.get_mut(index) {
+            entry.state = state;
+        }
+        self.save()
+    }
+
     /// The most recent entry that can still be undone.
+    ///
+    /// A `Failed` or still-`Pending` entry is undoable too: those are exactly
+    /// the cases where the system may have been changed halfway and the user
+    /// most needs a way back. Only an already-undone or irreversible entry is
+    /// skipped.
     pub fn last_undoable(&self) -> Option<(usize, &JournalEntry)> {
         self.entries
             .iter()
@@ -152,6 +202,7 @@ mod tests {
                 vec![]
             },
             undone: false,
+            state: EntryState::Applied,
         }
     }
 

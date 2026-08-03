@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::finding::Severity;
-use crate::lang::Lang;
+use crate::lang::{Lang, LocalizedText};
 
 /// A single command a fix would run. Structured (program + args, never a
 /// shell string) so it is safe to execute without a shell and easy to show.
@@ -42,10 +42,10 @@ impl FixCommand {
 pub struct FixPlan {
     /// Stable fix id, e.g. `fix.apt_clean`.
     pub id: String,
-    /// Short human title.
-    pub title: String,
-    /// What will happen, in plain language.
-    pub description: String,
+    /// Short human title, in both languages.
+    pub title: LocalizedText,
+    /// What will happen, in plain language, in both languages.
+    pub description: LocalizedText,
     /// Exact commands that would run, in order.
     pub commands: Vec<FixCommand>,
     /// Files and directories the fix creates, modifies or removes.
@@ -103,16 +103,23 @@ impl FixPlan {
         self.preview_in(Lang::En)
     }
 
-    /// [`FixPlan::preview`] with localized field labels. (The plan title and
-    /// description come from the fix registry and are English for now; the
-    /// labels around the consent-critical facts — risk, reversibility, exact
-    /// commands — follow the user's language.)
+    /// The plan's title in `lang`.
+    pub fn title_in(&self, lang: Lang) -> &str {
+        self.title.get(lang)
+    }
+
+    /// [`FixPlan::preview`] fully localized: the labels *and* the substance —
+    /// title, description — follow the user's language. Translating only the
+    /// labels left an Arabic user reading "Reversible: no" in Arabic above an
+    /// English sentence describing what was about to be purged, which inverts
+    /// the priority: the part that must be understood before consenting is the
+    /// description, not the field name.
     pub fn preview_in(&self, lang: Lang) -> String {
         use std::fmt::Write as _;
         let l = preview_labels(lang);
         let mut out = String::new();
-        let _ = writeln!(out, "{}", self.title);
-        let _ = writeln!(out, "{}\n", self.description);
+        let _ = writeln!(out, "{}", self.title.get(lang));
+        let _ = writeln!(out, "{}\n", self.description.get(lang));
         let _ = writeln!(out, "{}: {}", l.risk, self.risk.label_in(lang));
         let _ = writeln!(
             out,
@@ -157,8 +164,8 @@ mod tests {
     fn preview_states_reversibility_and_commands() {
         let plan = FixPlan {
             id: "fix.enable_ufw".into(),
-            title: "Enable the firewall".into(),
-            description: "Turns on ufw.".into(),
+            title: LocalizedText::new("Enable the firewall", "تفعيل الجدار الناري"),
+            description: LocalizedText::new("Turns on ufw.", "يشغّل ufw."),
             commands: vec![FixCommand::new("ufw", &["--force", "enable"])],
             affected_paths: vec!["/etc/ufw".into()],
             reversible: true,
@@ -177,5 +184,15 @@ mod tests {
         assert!(ar.contains("قابل للتراجع: نعم"));
         assert!(ar.contains("ufw --force enable"));
         assert!(!ar.contains("Reversible"));
+        // The substance — title and description — is localized too, not just
+        // the labels around it. This is the text a user must understand
+        // before approving a privileged change.
+        assert!(
+            ar.contains("تفعيل الجدار الناري"),
+            "Arabic title missing: {ar}"
+        );
+        assert!(ar.contains("يشغّل ufw."), "Arabic description missing: {ar}");
+        assert!(!ar.contains("Enable the firewall"));
+        assert!(!ar.contains("Turns on ufw."));
     }
 }

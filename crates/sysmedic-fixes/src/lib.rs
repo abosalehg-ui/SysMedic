@@ -14,11 +14,11 @@ pub mod command;
 pub mod fixes;
 pub mod journal;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub use command::{CommandRunner, RealRunner, RecordingRunner};
-pub use fixes::{fix_for_finding, undo_commands, Fix, FIX_IDS};
-pub use journal::{Journal, JournalEntry, JournalError};
+pub use fixes::{fix_for_finding, fix_ids, undo_commands, Fix};
+pub use journal::{EntryState, Journal, JournalEntry, JournalError};
 use sysmedic_core::fix::FixPlan;
 use sysmedic_core::Snapshot;
 
@@ -68,23 +68,45 @@ pub fn applicable_plans(snapshot: &Snapshot) -> Vec<FixPlan> {
 /// Stops at the first failing command (a fix is not left half-applied
 /// silently — the error names the command that failed). Callers must have
 /// obtained user confirmation before calling this.
+///
+/// **Write-ahead ordering.** The entry is journalled as `Pending` *before* the
+/// first command runs, and only then moved to `Applied` or `Failed`. Running
+/// first and journalling afterwards meant that if the journal write failed —
+/// most plausibly because the disk is full, which is a common reason to be
+/// running SysMedic at all — the fix had already taken effect but `undo` could
+/// never find it. Now the worst case is a `Pending` entry for a fix that did
+/// complete, which `undo` still handles.
 pub fn apply(
     plan: &FixPlan,
     runner: &dyn CommandRunner,
     journal: &mut Journal,
 ) -> Result<ApplyOutcome, FixError> {
-    let mut outputs = Vec::new();
-    for command in &plan.commands {
-        outputs.push(runner.run(command).map_err(FixError::CommandFailed)?);
-    }
-    journal.record(JournalEntry {
+    let index = journal.record_pending(JournalEntry {
         fix_id: plan.id.clone(),
-        title: plan.title.clone(),
+        // The journal keeps the English title: it is a persisted record whose
+        // value must not shift with the locale that happened to be active when
+        // the fix ran. Display layers localize via `undo_title_in`.
+        title: plan.title.en.clone(),
         applied_at: journal::now_rfc3339(),
         reversible: plan.reversible,
         undo: plan.undo.clone(),
         undone: false,
+        state: journal::EntryState::Pending,
     })?;
+
+    let mut outputs = Vec::new();
+    for command in &plan.commands {
+        match runner.run(command) {
+            Ok(output) => outputs.push(output),
+            Err(e) => {
+                // Best-effort: the command failure is the error worth
+                // surfacing, not a follow-on journal problem.
+                let _ = journal.finish(index, journal::EntryState::Failed);
+                return Err(FixError::CommandFailed(e));
+            }
+        }
+    }
+    journal.finish(index, journal::EntryState::Applied)?;
     Ok(ApplyOutcome {
         fix_id: plan.id.clone(),
         outputs,
@@ -98,35 +120,74 @@ pub fn apply(
 /// journal file. This keeps the trust boundary the same as `apply`: even if
 /// the journal on disk were tampered with, `undo` can only run the fixed,
 /// audited undo commands of a known fix — never arbitrary injected commands.
-pub fn undo(runner: &dyn CommandRunner, journal: &mut Journal) -> Result<String, FixError> {
+pub fn undo(
+    runner: &dyn CommandRunner,
+    journal: &mut Journal,
+    lang: sysmedic_core::Lang,
+) -> Result<String, FixError> {
     let (index, entry) = journal.last_undoable().ok_or(FixError::NothingToUndo)?;
-    let (title, fix_id) = (entry.title.clone(), entry.fix_id.clone());
-    let commands =
-        fixes::undo_commands(&fix_id).ok_or_else(|| FixError::UnknownFix(fix_id.clone()))?;
-    for command in &commands {
+    let (stored_title, fix_id) = (entry.title.clone(), entry.fix_id.clone());
+    let fix = fixes::find(&fix_id).ok_or_else(|| FixError::UnknownFix(fix_id.clone()))?;
+    for command in &fix.undo() {
         runner.run(command).map_err(FixError::CommandFailed)?;
     }
     journal.mark_undone(index)?;
-    Ok(title)
+    // Name the reverted fix in the user's language, falling back to whatever
+    // the journal recorded if the registry somehow has no title for it.
+    let title = fix.title().get(lang).to_string();
+    Ok(if title.is_empty() {
+        stored_title
+    } else {
+        title
+    })
+}
+
+/// The bilingual title of the fix an `undo` would revert, for previews.
+pub fn undo_title_in(journal: &Journal, lang: sysmedic_core::Lang) -> Option<String> {
+    let (_, entry) = journal.last_undoable()?;
+    Some(match fixes::find(&entry.fix_id) {
+        Some(fix) => fix.title().get(lang).to_string(),
+        None => entry.title.clone(),
+    })
+}
+
+/// Default install path of the privileged helper. It must match the
+/// `org.freedesktop.policykit.exec.path` annotation in
+/// `data/io.github.abosalehg_ui.sysmedic.policy`, or polkit will fall through
+/// to its generic exec action instead of SysMedic's own.
+pub const DEFAULT_HELPER: &str = "/usr/libexec/sysmedic-fix-helper";
+
+/// Which binary `pkexec` should be pointed at.
+///
+/// The `SYSMEDIC_HELPER` override is a development affordance and is compiled
+/// out of release builds. Leaving it in meant anything that could set the
+/// environment could choose the binary named in the polkit prompt: not a
+/// privilege escalation (an unregistered path falls back to polkit's generic
+/// exec action, which still authenticates), but the user would be approving a
+/// dialog they reasonably believed was SysMedic's.
+pub fn helper_path() -> String {
+    #[cfg(debug_assertions)]
+    if let Some(path) = std::env::var("SYSMEDIC_HELPER")
+        .ok()
+        .filter(|p| !p.is_empty())
+    {
+        return path;
+    }
+    DEFAULT_HELPER.to_string()
 }
 
 /// Where the CLI should read/write the journal: the system path when running
 /// as root, otherwise a per-user state file.
-pub fn journal_path() -> PathBuf {
+///
+/// Returns `None` when neither `XDG_STATE_HOME` nor `HOME` is set. The old
+/// `/tmp` fallback put the file at a predictable path in a world-traversable
+/// directory, where another local user could pre-create the directory and
+/// plant a symlink — so refusing is safer than guessing.
+pub fn journal_path() -> Option<PathBuf> {
     if is_root() {
-        return PathBuf::from(SYSTEM_JOURNAL);
+        return Some(PathBuf::from(SYSTEM_JOURNAL));
     }
-    let base = std::env::var("XDG_STATE_HOME")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var("HOME")
-                .ok()
-                .map(|h| Path::new(&h).join(".local/state"))
-        })
-        .unwrap_or_else(|| PathBuf::from("/tmp"));
-    base.join("sysmedic/journal.json")
+    sysmedic_core::paths::state_dir().map(|base| base.join("sysmedic/journal.json"))
 }
 
 pub fn is_root() -> bool {
@@ -173,12 +234,12 @@ mod tests {
         let mut journal = Journal::load(dir.path().join("j.json")).unwrap();
 
         apply(&plan, &runner, &mut journal).unwrap();
-        let title = undo(&runner, &mut journal).unwrap();
+        let title = undo(&runner, &mut journal, sysmedic_core::Lang::En).unwrap();
         assert_eq!(title, "Enable the firewall");
         let commands = runner.commands();
         assert_eq!(commands.last().unwrap().display(), "ufw disable");
         // Second undo finds nothing left.
-        assert!(undo(&runner, &mut journal).is_err());
+        assert!(undo(&runner, &mut journal, sysmedic_core::Lang::En).is_err());
     }
 
     #[test]
@@ -197,17 +258,18 @@ mod tests {
                 reversible: true,
                 undo: vec![sysmedic_core::fix::FixCommand::new("rm", &["-rf", "/"])],
                 undone: false,
+                state: EntryState::Applied,
             })
             .unwrap();
 
-        undo(&runner, &mut journal).unwrap();
+        undo(&runner, &mut journal, sysmedic_core::Lang::En).unwrap();
         let commands = runner.commands();
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].display(), "ufw disable");
     }
 
     #[test]
-    fn a_failing_command_aborts_and_is_not_recorded() {
+    fn a_failing_command_aborts_and_is_recorded_as_failed() {
         let snapshot = ufw_disabled();
         let plan = plan("fix.enable_ufw", &snapshot).unwrap();
         let runner = RecordingRunner::failing_on("ufw");
@@ -215,6 +277,69 @@ mod tests {
         let mut journal = Journal::load(dir.path().join("j.json")).unwrap();
 
         assert!(apply(&plan, &runner, &mut journal).is_err());
-        assert!(journal.entries().is_empty());
+        // The entry survives, marked Failed: a fix that got partway must stay
+        // visible and undoable, not vanish from the record.
+        assert_eq!(journal.entries().len(), 1);
+        assert_eq!(journal.entries()[0].state, EntryState::Failed);
+    }
+
+    #[test]
+    fn the_entry_is_journalled_before_any_command_runs() {
+        // The core write-ahead guarantee: by the time a command executes, the
+        // journal on disk already knows about it. Verified by having the
+        // runner read the journal file back mid-apply.
+        use std::sync::Mutex;
+        struct PeekingRunner {
+            path: std::path::PathBuf,
+            seen_on_disk: Mutex<Option<String>>,
+        }
+        impl CommandRunner for PeekingRunner {
+            fn run(&self, _: &sysmedic_core::fix::FixCommand) -> Result<String, String> {
+                *self.seen_on_disk.lock().unwrap() = std::fs::read_to_string(&self.path).ok();
+                Ok(String::new())
+            }
+        }
+
+        let snapshot = ufw_disabled();
+        let plan = plan("fix.enable_ufw", &snapshot).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("j.json");
+        let runner = PeekingRunner {
+            path: path.clone(),
+            seen_on_disk: Mutex::new(None),
+        };
+        let mut journal = Journal::load(&path).unwrap();
+
+        apply(&plan, &runner, &mut journal).unwrap();
+
+        let during = runner.seen_on_disk.lock().unwrap().clone();
+        let during = during.expect("journal file existed while the command ran");
+        assert!(
+            during.contains("fix.enable_ufw") && during.contains("pending"),
+            "the fix was not journalled as pending before it ran: {during}"
+        );
+        // ...and it is Applied once the commands succeed.
+        assert_eq!(journal.entries()[0].state, EntryState::Applied);
+    }
+
+    #[test]
+    fn a_pending_entry_is_still_undoable() {
+        // Simulates a process killed mid-apply: the entry stayed Pending.
+        let dir = tempfile::tempdir().unwrap();
+        let mut journal = Journal::load(dir.path().join("j.json")).unwrap();
+        journal
+            .record(JournalEntry {
+                fix_id: "fix.enable_ufw".into(),
+                title: "Enable the firewall".into(),
+                applied_at: "2026-08-03T00:00:00Z".into(),
+                reversible: true,
+                undo: vec![],
+                undone: false,
+                state: EntryState::Pending,
+            })
+            .unwrap();
+        let runner = RecordingRunner::new();
+        assert!(undo(&runner, &mut journal, sysmedic_core::Lang::En).is_ok());
+        assert_eq!(runner.commands()[0].display(), "ufw disable");
     }
 }
