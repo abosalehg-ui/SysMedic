@@ -123,7 +123,7 @@ fn full_report() -> HealthReport {
 /// `sysmedic monitor`: run a checkup, record it in history, and fire a desktop
 /// notification for each active alert. This is what the scheduled timer runs.
 pub fn monitor(quiet: bool) -> Result<()> {
-    let lang = sysmedic_core::Lang::from_locale(&std::env::var("LANG").unwrap_or_default());
+    let lang = sysmedic_core::Lang::from_env();
     let report = full_report();
 
     // Record history (best-effort — a monitor run should not fail on I/O).

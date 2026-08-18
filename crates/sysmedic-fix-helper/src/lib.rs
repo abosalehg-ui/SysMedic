@@ -11,15 +11,30 @@
 //! privileges and asks the fix registry for the plan, so a compromised
 //! unprivileged caller cannot smuggle in arbitrary commands.
 //!
+//! **Two binaries, two polkit actions.** pkexec chooses its polkit action from
+//! the path of the program it launches, so one binary can only ever map to one
+//! action — and one action means one generic prompt for both "empty the
+//! download cache" and "purge packages and their configuration files". This
+//! crate therefore builds two thin binaries over the same logic:
+//!
+//! * `sysmedic-fix-helper` — [`FixTier::Routine`] fixes: undoable setting
+//!   changes.
+//! * `sysmedic-fix-helper-destructive` — [`FixTier::Destructive`] fixes: things
+//!   `undo` cannot bring back.
+//!
+//! Each accepts only the ids of its own tier, so the split is enforced in code
+//! and not merely described in the prompt.
+//!
 //! Usage:
-//!   sysmedic-fix-helper apply <fix-id>
-//!   sysmedic-fix-helper undo
-//!   sysmedic-fix-helper list-journal
+//!   sysmedic-fix-helper[-destructive] apply <fix-id>
+//!   sysmedic-fix-helper[-destructive] undo
+//!   sysmedic-fix-helper[-destructive] list-journal
 
 use std::process::ExitCode;
 
 use sysmedic_fixes::{
-    apply, fix_ids, journal_path, plan, undo, CommandRunner, Journal, RealRunner, SYSTEM_JOURNAL,
+    apply, fix_ids_for, journal_path, plan, undo, CommandRunner, FixTier, Journal, RealRunner,
+    SYSTEM_JOURNAL,
 };
 
 fn snapshot() -> sysmedic_core::Snapshot {
@@ -37,7 +52,7 @@ fn open_journal() -> Result<Journal, String> {
 /// The helper reports in the language of the caller's environment, so the GUI
 /// and CLI can surface its message unchanged.
 fn helper_lang() -> sysmedic_core::Lang {
-    sysmedic_core::Lang::from_locale(&std::env::var("LANG").unwrap_or_default())
+    sysmedic_core::Lang::from_env()
 }
 
 /// What the helper was asked to do. The only free-form input from the caller
@@ -45,7 +60,7 @@ fn helper_lang() -> sysmedic_core::Lang {
 /// else is rejected here, before any privileged work, so a compromised caller
 /// cannot smuggle in a command or an unexpected verb.
 #[derive(Debug, PartialEq)]
-enum Action {
+pub enum Action {
     Apply(String),
     Undo,
     ListJournal,
@@ -53,11 +68,21 @@ enum Action {
 
 const USAGE: &str = "usage: sysmedic-fix-helper <apply <fix-id>|undo|list-journal>";
 
-fn parse_action(args: &[String]) -> Result<Action, String> {
+/// Validate the caller's request for a helper of `tier`.
+///
+/// An id belonging to the *other* tier is rejected here, before any privileged
+/// work: authorization was granted for this class of change, so this binary
+/// must not perform another one.
+pub fn parse_action(tier: FixTier, args: &[String]) -> Result<Action, String> {
     match args {
         [cmd, fix_id] if cmd == "apply" => {
-            if !fix_ids().contains(&fix_id.as_str()) {
-                return Err(format!("unknown fix id '{fix_id}'"));
+            if !fix_ids_for(tier).contains(&fix_id.as_str()) {
+                return Err(match sysmedic_fixes::tier_of(fix_id) {
+                    Some(other) => {
+                        format!("fix '{fix_id}' is {other:?}; this helper only runs {tier:?} fixes")
+                    }
+                    None => format!("unknown fix id '{fix_id}'"),
+                });
             }
             Ok(Action::Apply(fix_id.clone()))
         }
@@ -67,7 +92,7 @@ fn parse_action(args: &[String]) -> Result<Action, String> {
     }
 }
 
-fn run() -> Result<String, String> {
+fn run(tier: FixTier) -> Result<String, String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !sysmedic_fixes::is_root() {
         return Err(
@@ -75,7 +100,7 @@ fn run() -> Result<String, String> {
         );
     }
     let runner: &dyn CommandRunner = &RealRunner;
-    match parse_action(&args)? {
+    match parse_action(tier, &args)? {
         Action::Apply(fix_id) => {
             let snapshot = snapshot();
             let plan = plan(&fix_id, &snapshot)
@@ -90,6 +115,25 @@ fn run() -> Result<String, String> {
         }
         Action::Undo => {
             let mut journal = open_journal()?;
+            // The entry to reverse is only known once the journal is read, so
+            // the tier check happens here rather than in `parse_action`: this
+            // binary was authorized for one class of change and must not
+            // perform another, whatever the journal happens to hold.
+            if let Some((_, entry)) = journal.last_undoable() {
+                match sysmedic_fixes::tier_of(&entry.fix_id) {
+                    Some(entry_tier) if entry_tier != tier => {
+                        return Err(format!(
+                            "the last undoable fix '{}' is {entry_tier:?}; run the {entry_tier:?} \
+                             helper instead",
+                            entry.fix_id
+                        ));
+                    }
+                    None => {
+                        return Err(format!("cannot undo unknown fix '{}'", entry.fix_id));
+                    }
+                    _ => {}
+                }
+            }
             let title = undo(runner, &mut journal, helper_lang()).map_err(|e| e.to_string())?;
             Ok(format!("Reverted: {title}"))
         }
@@ -117,8 +161,9 @@ fn run() -> Result<String, String> {
     }
 }
 
-fn main() -> ExitCode {
-    match run() {
+/// Entry point shared by both binaries.
+pub fn main_for(tier: FixTier) -> ExitCode {
+    match run(tier) {
         Ok(message) => {
             println!("{message}");
             ExitCode::SUCCESS
@@ -141,35 +186,65 @@ mod tests {
     #[test]
     fn apply_accepts_only_known_fix_ids() {
         assert_eq!(
-            parse_action(&args(&["apply", "fix.enable_ufw"])),
+            parse_action(FixTier::Routine, &args(&["apply", "fix.enable_ufw"])),
             Ok(Action::Apply("fix.enable_ufw".into()))
         );
         // The id is the only free-form input, and it is validated against the
         // compiled-in registry: anything else is rejected before any root work.
-        assert!(parse_action(&args(&["apply", "fix.enable_ufw; rm -rf /"])).is_err());
-        assert!(parse_action(&args(&["apply", "../../etc/passwd"])).is_err());
-        assert!(parse_action(&args(&["apply", "fix.nonexistent"])).is_err());
+        for hostile in [
+            "fix.enable_ufw; rm -rf /",
+            "../../etc/passwd",
+            "fix.nonexistent",
+        ] {
+            assert!(parse_action(FixTier::Routine, &args(&["apply", hostile])).is_err());
+            assert!(parse_action(FixTier::Destructive, &args(&["apply", hostile])).is_err());
+        }
+    }
+
+    #[test]
+    fn a_helper_refuses_fixes_from_the_other_tier() {
+        // polkit authorized *this* class of change. Running the other class
+        // under that authorization would make the prompt a lie, so each binary
+        // rejects the other tier's ids outright.
+        let err = parse_action(FixTier::Routine, &args(&["apply", "fix.autoremove"]))
+            .expect_err("routine helper must refuse a destructive fix");
+        assert!(err.contains("only runs"), "unhelpful error: {err}");
+
+        let err = parse_action(FixTier::Destructive, &args(&["apply", "fix.enable_ufw"]))
+            .expect_err("destructive helper must refuse a routine fix");
+        assert!(err.contains("only runs"), "unhelpful error: {err}");
+
+        // Each accepts its own.
+        assert!(parse_action(FixTier::Destructive, &args(&["apply", "fix.autoremove"])).is_ok());
+        assert!(parse_action(FixTier::Routine, &args(&["apply", "fix.enable_ufw"])).is_ok());
     }
 
     #[test]
     fn apply_requires_exactly_one_id() {
-        assert!(parse_action(&args(&["apply"])).is_err());
-        assert!(parse_action(&args(&["apply", "fix.enable_ufw", "extra"])).is_err());
+        assert!(parse_action(FixTier::Routine, &args(&["apply"])).is_err());
+        assert!(parse_action(
+            FixTier::Routine,
+            &args(&["apply", "fix.enable_ufw", "extra"])
+        )
+        .is_err());
     }
 
     #[test]
     fn undo_and_list_take_no_arguments() {
-        assert_eq!(parse_action(&args(&["undo"])), Ok(Action::Undo));
         assert_eq!(
-            parse_action(&args(&["list-journal"])),
+            parse_action(FixTier::Routine, &args(&["undo"])),
+            Ok(Action::Undo)
+        );
+        assert_eq!(
+            parse_action(FixTier::Routine, &args(&["list-journal"])),
             Ok(Action::ListJournal)
         );
-        assert!(parse_action(&args(&["undo", "x"])).is_err());
+        assert!(parse_action(FixTier::Routine, &args(&["undo", "x"])).is_err());
     }
 
     #[test]
     fn unknown_verbs_are_rejected() {
-        assert!(parse_action(&args(&["delete-everything"])).is_err());
-        assert!(parse_action(&args(&[])).is_err());
+        assert!(parse_action(FixTier::Routine, &args(&["delete-everything"])).is_err());
+        assert!(parse_action(FixTier::Routine, &args(&[])).is_err());
     }
 }

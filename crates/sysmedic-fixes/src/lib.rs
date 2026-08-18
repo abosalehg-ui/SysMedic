@@ -17,7 +17,7 @@ pub mod journal;
 use std::path::PathBuf;
 
 pub use command::{CommandRunner, RealRunner, RecordingRunner};
-pub use fixes::{fix_for_finding, fix_ids, undo_commands, Fix};
+pub use fixes::{fix_for_finding, fix_ids, fix_ids_for, tier_of, undo_commands, Fix, FixTier};
 pub use journal::{EntryState, Journal, JournalEntry, JournalError};
 use sysmedic_core::fix::FixPlan;
 use sysmedic_core::Snapshot;
@@ -90,6 +90,7 @@ pub fn apply(
         applied_at: journal::now_rfc3339(),
         reversible: plan.reversible,
         undo: plan.undo.clone(),
+        restore: plan.restore.clone(),
         undone: false,
         state: journal::EntryState::Pending,
     })?;
@@ -120,6 +121,10 @@ pub fn apply(
 /// journal file. This keeps the trust boundary the same as `apply`: even if
 /// the journal on disk were tampered with, `undo` can only run the fixed,
 /// audited undo commands of a known fix — never arbitrary injected commands.
+///
+/// The one value that does come from the journal is `restore` — the setting
+/// the fix overwrote — and the fix validates it before substituting it into an
+/// argument. The program and its options stay compiled in either way.
 pub fn undo(
     runner: &dyn CommandRunner,
     journal: &mut Journal,
@@ -127,8 +132,9 @@ pub fn undo(
 ) -> Result<String, FixError> {
     let (index, entry) = journal.last_undoable().ok_or(FixError::NothingToUndo)?;
     let (stored_title, fix_id) = (entry.title.clone(), entry.fix_id.clone());
+    let restore = entry.restore.clone();
     let fix = fixes::find(&fix_id).ok_or_else(|| FixError::UnknownFix(fix_id.clone()))?;
-    for command in &fix.undo() {
+    for command in &fix.undo_from(restore.as_deref()) {
         runner.run(command).map_err(FixError::CommandFailed)?;
     }
     journal.mark_undone(index)?;
@@ -151,13 +157,20 @@ pub fn undo_title_in(journal: &Journal, lang: sysmedic_core::Lang) -> Option<Str
     })
 }
 
-/// Default install path of the privileged helper. It must match the
+/// Default install path of the routine privileged helper. It must match the
 /// `org.freedesktop.policykit.exec.path` annotation in
 /// `data/io.github.abosalehg_ui.sysmedic.policy`, or polkit will fall through
 /// to its generic exec action instead of SysMedic's own.
 pub const DEFAULT_HELPER: &str = "/usr/libexec/sysmedic-fix-helper";
 
-/// Which binary `pkexec` should be pointed at.
+/// Install path of the destructive helper, matching the second polkit action.
+pub const DESTRUCTIVE_HELPER: &str = "/usr/libexec/sysmedic-fix-helper-destructive";
+
+/// Which binary `pkexec` should be pointed at for `tier`.
+///
+/// pkexec picks its polkit action from this path, so the choice of binary *is*
+/// the choice of authorization prompt: a routine, undoable setting change and
+/// an irreversible purge no longer share one generic dialog.
 ///
 /// The `SYSMEDIC_HELPER` override is a development affordance and is compiled
 /// out of release builds. Leaving it in meant anything that could set the
@@ -165,7 +178,7 @@ pub const DEFAULT_HELPER: &str = "/usr/libexec/sysmedic-fix-helper";
 /// privilege escalation (an unregistered path falls back to polkit's generic
 /// exec action, which still authenticates), but the user would be approving a
 /// dialog they reasonably believed was SysMedic's.
-pub fn helper_path() -> String {
+pub fn helper_path_for(tier: FixTier) -> String {
     #[cfg(debug_assertions)]
     if let Some(path) = std::env::var("SYSMEDIC_HELPER")
         .ok()
@@ -173,7 +186,26 @@ pub fn helper_path() -> String {
     {
         return path;
     }
-    DEFAULT_HELPER.to_string()
+    match tier {
+        FixTier::Routine => DEFAULT_HELPER.to_string(),
+        FixTier::Destructive => DESTRUCTIVE_HELPER.to_string(),
+    }
+}
+
+/// The helper that can run `fix_id`, or `None` for an unknown id.
+pub fn helper_for_fix(fix_id: &str) -> Option<String> {
+    Some(helper_path_for(tier_of(fix_id)?))
+}
+
+/// The helper that handles `undo`.
+///
+/// Only a `reversible` entry is ever undoable, and a reversible low-risk fix
+/// is by definition [`FixTier::Routine`] — so undo is a routine operation and
+/// gets the routine prompt. The helper re-checks the tier of the entry it is
+/// about to reverse, so a hypothetical reversible-but-destructive fix would be
+/// refused rather than slipped through the gentler dialog.
+pub fn undo_helper() -> String {
+    helper_path_for(FixTier::Routine)
 }
 
 /// Where the CLI should read/write the journal: the system path when running
@@ -257,6 +289,7 @@ mod tests {
                 applied_at: "2026-07-24T00:00:00Z".into(),
                 reversible: true,
                 undo: vec![sysmedic_core::fix::FixCommand::new("rm", &["-rf", "/"])],
+                restore: None,
                 undone: false,
                 state: EntryState::Applied,
             })
@@ -334,6 +367,7 @@ mod tests {
                 applied_at: "2026-08-03T00:00:00Z".into(),
                 reversible: true,
                 undo: vec![],
+                restore: None,
                 undone: false,
                 state: EntryState::Pending,
             })

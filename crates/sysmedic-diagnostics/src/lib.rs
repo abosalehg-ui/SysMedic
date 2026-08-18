@@ -62,6 +62,7 @@ pub fn default_diagnostics() -> Vec<Box<dyn Diagnostic>> {
             "security-updates-pending",
             rules::packages::security_updates
         ),
+        rule!("security-index-stale", rules::packages::index_stale),
         rule!(
             "packages-upgrades-pending",
             rules::packages::upgrades_pending
@@ -108,6 +109,7 @@ pub const FINDING_IDS: &[&str] = &[
     "packages.apt_cache_large",
     "packages.pacman_cache_large",
     "security.updates_pending",
+    "security.index_stale",
     "packages.upgrades_pending",
     "logs.journal_large",
     "logs.large_files",
@@ -138,7 +140,7 @@ mod doc_guards {
     fn declared_rule_count_matches_the_documentation() {
         assert_eq!(
             super::FINDING_IDS.len(),
-            28,
+            29,
             "rule count changed — update the docs listed above"
         );
     }

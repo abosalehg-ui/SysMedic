@@ -75,6 +75,12 @@ pub mod smart {
 pub mod packages {
     /// More pending updates than this raises `packages.upgrades_pending`.
     pub const UPGRADABLE_BACKLOG: u32 = 20;
+    /// A package index older than this many days raises
+    /// `security.index_stale`. Debian/Ubuntu refresh daily by default and
+    /// security advisories are published continuously, so a week without a
+    /// refresh means the pending-security-update count is no longer evidence
+    /// of anything.
+    pub const INDEX_STALE_DAYS: u64 = 7;
     /// Old kernels beyond this many raise a finding and make
     /// `fix.autoremove` applicable (the running kernel + one fallback stay).
     pub const OLD_KERNELS_KEPT: usize = 2;

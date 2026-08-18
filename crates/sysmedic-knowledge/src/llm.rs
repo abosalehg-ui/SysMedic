@@ -21,11 +21,18 @@ use crate::{Explanation, Lang};
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 /// Anthropic API version header value.
 const API_VERSION: &str = "2023-06-01";
-/// Default model — the most capable Claude at time of writing. Overridable via
-/// `SYSMEDIC_LLM_MODEL` for users who prefer a cheaper or newer model.
-pub const DEFAULT_MODEL: &str = "claude-opus-4-8";
-/// Generous cap for a single explanation; the prompt asks for a short answer.
-const MAX_TOKENS: u32 = 1024;
+/// Default model. Overridable via `SYSMEDIC_LLM_MODEL` for users who prefer a
+/// cheaper or newer one.
+pub const DEFAULT_MODEL: &str = "claude-opus-5";
+/// Output cap. Current models think before answering and those tokens count
+/// against this limit, so the old 1024 could be spent before the explanation
+/// itself began — the answer came back truncated, or empty and indistinguishable
+/// from an outage. The prompt still asks for a few short paragraphs.
+const MAX_TOKENS: u32 = 16_000;
+/// Reasoning effort. A five-question explanation of an already-diagnosed
+/// finding is not a hard reasoning problem, and `low` keeps latency and cost
+/// down for what is an interactive command.
+const EFFORT: &str = "low";
 
 /// A minimal HTTP seam so the provider is unit-testable without a network.
 ///
@@ -126,6 +133,7 @@ remedy provided. Respond in English."
         let body = serde_json::json!({
             "model": self.model,
             "max_tokens": MAX_TOKENS,
+            "output_config": { "effort": EFFORT },
             "system": Self::system_prompt(lang),
             "messages": [{
                 "role": "user",
@@ -218,7 +226,10 @@ impl HttpTransport for UreqTransport {
         // connection (captive portal, a proxy black-holing api.anthropic.com).
         let agent = ureq::AgentBuilder::new()
             .timeout_connect(std::time::Duration::from_secs(10))
-            .timeout(std::time::Duration::from_secs(60))
+            // Non-streaming request with a large output cap: allow for a model
+            // that thinks before it answers, while still bounding the call so
+            // `explain --deep` can't hang on a stalled connection.
+            .timeout(std::time::Duration::from_secs(120))
             .build();
         let mut req = agent.post(url);
         for (k, v) in headers {
@@ -293,6 +304,7 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(json["model"], DEFAULT_MODEL);
         assert_eq!(json["max_tokens"], MAX_TOKENS);
+        assert_eq!(json["output_config"]["effort"], EFFORT);
         assert!(json["system"].as_str().unwrap().contains("SysMedic"));
         let user = json["messages"][0]["content"].as_str().unwrap();
         assert!(user.contains("storage.disk_nearly_full"));

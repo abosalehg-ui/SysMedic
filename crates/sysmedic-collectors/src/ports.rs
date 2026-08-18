@@ -21,13 +21,29 @@ impl Collector for PortsCollector {
         if let Some(v6) = util::read_file("/proc/net/tcp6") {
             ports.extend(parse_proc_net_tcp(&v6, "tcp6", true));
         }
+        // UDP too: the security audit describes itself as "services listening
+        // on the network", and a TCP-only sweep silently missed everything
+        // that speaks UDP — mDNS/avahi (5353), a resolver on 53, SSDP (1900),
+        // WireGuard, a game or media server.
+        if let Some(v4) = util::read_file("/proc/net/udp") {
+            ports.extend(parse_proc_net_udp(&v4, "udp", false));
+        }
+        if let Some(v6) = util::read_file("/proc/net/udp6") {
+            ports.extend(parse_proc_net_udp(&v6, "udp6", true));
+        }
         if ports.is_empty() {
             snapshot
                 .collection_errors
                 .push("ports: /proc/net/tcp not readable".into());
             return;
         }
-        ports.sort_by_key(|p| (p.port, p.proto));
+        // Sort on the full dedup key. Sorting on `(port, proto)` alone left
+        // rows with the same port but different `exposed` interleaved, and
+        // `dedup_by_key` only collapses *adjacent* equals — so duplicates
+        // survived depending on the order the kernel happened to list them.
+        ports.sort_by(|a, b| {
+            (a.port, a.proto, a.exposed, &a.address).cmp(&(b.port, b.proto, b.exposed, &b.address))
+        });
         ports.dedup_by_key(|p| (p.port, p.proto, p.exposed));
         snapshot.ports = Some(ports);
     }
@@ -35,6 +51,27 @@ impl Collector for PortsCollector {
 
 /// Parse listening sockets from `/proc/net/tcp` or `/proc/net/tcp6`.
 pub fn parse_proc_net_tcp(content: &str, proto: &'static str, v6: bool) -> Vec<ListeningPort> {
+    parse_proc_net(content, proto, v6, |state| state == TCP_LISTEN)
+}
+
+/// Parse bound sockets from `/proc/net/udp` or `/proc/net/udp6`.
+///
+/// UDP has no LISTEN state — an unconnected bound socket sits in `07`
+/// (TCP_CLOSE) and a connected one in `01`. Every row in this table is a
+/// socket bound to the local address and port shown, which is exactly what
+/// the exposure audit is about, so the state is not filtered on.
+pub fn parse_proc_net_udp(content: &str, proto: &'static str, v6: bool) -> Vec<ListeningPort> {
+    parse_proc_net(content, proto, v6, |_| true)
+}
+
+/// Shared row parser for the `/proc/net/{tcp,udp}{,6}` tables, which have the
+/// same leading columns: `sl local_address rem_address st …`.
+fn parse_proc_net(
+    content: &str,
+    proto: &'static str,
+    v6: bool,
+    keep_state: fn(&str) -> bool,
+) -> Vec<ListeningPort> {
     content
         .lines()
         .skip(1)
@@ -42,11 +79,15 @@ pub fn parse_proc_net_tcp(content: &str, proto: &'static str, v6: bool) -> Vec<L
             let mut cols = line.split_whitespace();
             let local = cols.nth(1)?; // field 1: local_address
             let state = cols.nth(1)?; // field 3: state (after local, rem)
-            if state != TCP_LISTEN {
+            if !keep_state(state) {
                 return None;
             }
             let (hex_addr, hex_port) = local.split_once(':')?;
             let port = u16::from_str_radix(hex_port, 16).ok()?;
+            // Port 0 is an unbound socket, not a service anyone can reach.
+            if port == 0 {
+                return None;
+            }
             let (address, loopback) = if v6 {
                 decode_v6(hex_addr)
             } else {
@@ -139,6 +180,43 @@ mod tests {
         let local = ports.iter().find(|p| p.port == 631).unwrap();
         assert_eq!(local.address, "::1");
         assert!(!local.exposed);
+    }
+
+    #[test]
+    fn udp_sockets_are_collected_regardless_of_state() {
+        // /proc/net/udp: an unconnected bound socket is state 07, a connected
+        // one 01 — neither is LISTEN, so a TCP-shaped filter found nothing.
+        // Rows: avahi on 5353 (all interfaces), a resolver on 127.0.0.53:53,
+        // and an unbound socket on port 0.
+        let udp = "\
+  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt
+   0: 00000000:14E9 00000000:0000 07 00000000:00000000 00:00000000 00000000
+   1: 3500007F:0035 00000000:0000 07 00000000:00000000 00:00000000 00000000
+   2: 0100007F:0044 0100007F:0043 01 00000000:00000000 00:00000000 00000000
+   3: 00000000:0000 00000000:0000 07 00000000:00000000 00:00000000 00000000
+";
+        let ports = parse_proc_net_udp(udp, "udp", false);
+        assert_eq!(ports.len(), 3, "port 0 is unbound and must be skipped");
+
+        let mdns = ports.iter().find(|p| p.port == 5353).unwrap();
+        assert_eq!(mdns.address, "0.0.0.0");
+        assert!(mdns.exposed, "mDNS on all interfaces is network-exposed");
+        assert_eq!(mdns.proto, "udp");
+
+        let resolver = ports.iter().find(|p| p.port == 53).unwrap();
+        assert_eq!(resolver.address, "127.0.0.53");
+        assert!(!resolver.exposed);
+
+        // A connected UDP socket (state 01) is still a bound local port.
+        assert!(ports.iter().any(|p| p.port == 68));
+    }
+
+    #[test]
+    fn tcp_still_keeps_only_listening_sockets() {
+        // Widening the parser for UDP must not widen it for TCP.
+        let ports = parse_proc_net_tcp(V4, "tcp", false);
+        assert_eq!(ports.len(), 2);
+        assert!(ports.iter().all(|p| p.port == 22 || p.port == 53));
     }
 
     #[test]

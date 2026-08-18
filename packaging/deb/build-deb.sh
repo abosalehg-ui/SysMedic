@@ -27,6 +27,10 @@ echo "Packaging SysMedic $VERSION ($ARCH)"
 # --- Binaries -------------------------------------------------------------
 install -Dm755 target/release/sysmedic          "$STAGE/usr/bin/sysmedic"
 install -Dm755 target/release/sysmedic-fix-helper "$STAGE/usr/libexec/sysmedic-fix-helper"
+# The destructive-tier helper: a separate binary so polkit can prompt with
+# its own, more explicit action (see data/*.policy).
+install -Dm755 target/release/sysmedic-fix-helper-destructive \
+  "$STAGE/usr/libexec/sysmedic-fix-helper-destructive"
 GUI_PACKAGED=0
 if [[ -x target/release/sysmedic-gui ]]; then
   install -Dm755 target/release/sysmedic-gui    "$STAGE/usr/bin/sysmedic-gui"

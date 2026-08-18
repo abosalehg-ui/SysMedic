@@ -58,6 +58,47 @@ impl Snapshot {
         keep(&mut self.ports, other.ports);
         self.collection_errors.extend(other.collection_errors);
     }
+
+    /// The health categories this snapshot actually has data for.
+    ///
+    /// A category with no data produces no findings, and a category with no
+    /// findings used to score a clean 100 — so a machine where `smartctl`,
+    /// `systemd` and `ufw` were all missing graded "Excellent" on the strength
+    /// of what was never measured. The score is now averaged over measured
+    /// categories only and the report states the coverage, so the headline
+    /// number means "of what we could see" rather than an assumed all-clear.
+    ///
+    /// A category counts as measured when the section its rules read is
+    /// present. Storage and Security draw on more than one collector, and any
+    /// one of them is enough to score the category.
+    pub fn measured_categories(&self) -> Vec<crate::finding::Category> {
+        use crate::finding::Category;
+        let mut measured = Vec::new();
+        let mut mark = |category, present: bool| {
+            if present {
+                measured.push(category);
+            }
+        };
+        mark(Category::Boot, self.boot.is_some());
+        mark(Category::Cpu, self.cpu.is_some());
+        mark(Category::Memory, self.memory.is_some());
+        mark(
+            Category::Storage,
+            self.disks.is_some() || self.smart.is_some() || self.snap.is_some(),
+        );
+        mark(Category::Thermal, self.thermal.is_some());
+        mark(Category::Processes, self.processes.is_some());
+        mark(Category::Services, self.services.is_some());
+        mark(Category::Packages, self.packages.is_some());
+        mark(Category::Logs, self.logs.is_some());
+        mark(Category::Network, self.network.is_some());
+        mark(
+            Category::Security,
+            self.security.is_some() || self.ports.is_some() || self.packages.is_some(),
+        );
+        mark(Category::Battery, self.battery.is_some());
+        measured
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -172,6 +213,21 @@ pub struct PackageInfo {
     pub pacman_cache_bytes: Option<u64>,
     pub upgradable: Option<u32>,
     pub security_upgrades: Option<u32>,
+    /// Packages `autoremove --purge` would delete, from a simulation run.
+    ///
+    /// The fix preview is the consent contract for a privileged, irreversible
+    /// change, so it must name what will actually be removed rather than the
+    /// old kernels alone. Collected once per checkup here (the collectors own
+    /// the I/O) so building the plan stays pure.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub autoremovable: Vec<String>,
+    /// Age in days of the package index (`apt update` metadata).
+    ///
+    /// `security_upgrades` is only as truthful as the index it was computed
+    /// from: on a machine that has not refreshed in months, "0 security
+    /// updates pending" is an absence of knowledge reported as an all-clear.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index_age_days: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -251,6 +307,11 @@ pub struct BatteryInfo {
 pub struct SnapInfo {
     pub disabled_revisions: u32,
     pub snaps_dir_bytes: Option<u64>,
+    /// The system's current `refresh.retain` setting, so undoing
+    /// `fix.snap_retain` can restore the user's value instead of assuming
+    /// snapd's default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_retain: Option<u32>,
 }
 
 #[derive(Debug, Default, Clone, Serialize)]

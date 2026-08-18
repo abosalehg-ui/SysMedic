@@ -72,12 +72,16 @@ from the `.deb`.
 
 ## Note on privileged fixes
 
-The **`.deb`** installs `sysmedic-fix-helper` to `/usr/libexec` and the polkit
-policy to `/usr/share/polkit-1/actions`, so Auto-Fix works: fixes are
-authorized per-action through polkit and the GUI/CLI never run as root.
+The **`.deb`** installs both privileged helpers — `sysmedic-fix-helper` and
+`sysmedic-fix-helper-destructive` — to `/usr/libexec`, and the polkit policy to
+`/usr/share/polkit-1/actions`, so Auto-Fix works: fixes are authorized
+per-action through polkit and the GUI/CLI never run as root. The two binaries
+exist because pkexec derives its polkit action from the path of the program it
+launches, so a reversible setting change and an irreversible purge need
+separate executables to get separate prompts (see `data/README.md`).
 
-Under **Flatpak, Snap, and AppImage** the polkit action's `exec.path` points at
-the host path `/usr/libexec/sysmedic-fix-helper`, which those sandboxed/bundled
+Under **Flatpak, Snap, and AppImage** the polkit actions' `exec.path` points at
+the host paths under `/usr/libexec`, which those sandboxed/bundled
 formats do not install on the host — so **Auto-Fix currently requires the
 `.deb`**. Making fixes work from a sandbox needs a host-side privileged service
 (e.g. a systemd system service activated over D-Bus) that the sandboxed app

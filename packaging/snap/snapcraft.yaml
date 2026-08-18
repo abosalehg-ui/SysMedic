@@ -48,6 +48,8 @@ parts:
       install -Dm755 target/release/sysmedic-gui "$CRAFT_PART_INSTALL/bin/sysmedic-gui"
       install -Dm755 target/release/sysmedic-fix-helper \
         "$CRAFT_PART_INSTALL/libexec/sysmedic-fix-helper"
+      install -Dm755 target/release/sysmedic-fix-helper-destructive \
+        "$CRAFT_PART_INSTALL/libexec/sysmedic-fix-helper-destructive"
       install -Dm644 data/io.github.abosalehg_ui.SysMedic.desktop \
         "$CRAFT_PART_INSTALL/share/applications/io.github.abosalehg_ui.SysMedic.desktop"
       install -Dm644 data/io.github.abosalehg_ui.SysMedic.metainfo.xml \

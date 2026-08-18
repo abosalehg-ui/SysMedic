@@ -5,29 +5,36 @@ use crate::util;
 
 pub struct DiskCollector;
 
+/// Filesystem types a "disk nearly full" finding must never fire on.
+///
+/// Two groups, both of which are 100% "full" by construction:
+///
+/// * Pseudo filesystems (`tmpfs`, `devtmpfs`, `overlay`, `efivarfs`, `ramfs`)
+///   — not disks at all.
+/// * Read-only images (`squashfs`, `iso9660`, `udf`, `erofs`) — a mounted ISO,
+///   a game image, a distro installer, an AppImage. Every one of them reports
+///   zero bytes free, which used to raise a **Critical** `storage.disk_nearly_full`
+///   finding, and a Critical caps the whole health score at 59. Plugging in an
+///   install USB dropped the machine from "Excellent" to "Poor".
+///
+/// Applied twice on purpose: as `df -x` arguments (so df never reports them)
+/// and again in [`parse_df`], which is the pure, unit-tested half.
+const EXCLUDED_FS: &[&str] = &[
+    "tmpfs", "devtmpfs", "ramfs", "overlay", "efivarfs", "squashfs", "iso9660", "udf", "erofs",
+];
+
 impl Collector for DiskCollector {
     fn name(&self) -> &'static str {
         "disk"
     }
 
     fn collect(&self, snapshot: &mut Snapshot) {
-        let out = util::run(
-            "df",
-            &[
-                "-B1",
-                "--output=source,target,fstype,size,avail",
-                "-x",
-                "tmpfs",
-                "-x",
-                "devtmpfs",
-                "-x",
-                "squashfs",
-                "-x",
-                "overlay",
-                "-x",
-                "efivarfs",
-            ],
-        );
+        let mut args = vec!["-B1", "--output=source,target,fstype,size,avail"];
+        for fs in EXCLUDED_FS {
+            args.push("-x");
+            args.push(fs);
+        }
+        let out = util::run("df", &args);
         match out.map(|s| parse_df(&s)) {
             Some(disks) if !disks.is_empty() => snapshot.disks = Some(disks),
             _ => snapshot
@@ -58,6 +65,12 @@ pub fn parse_df(s: &str) -> Vec<DiskInfo> {
             let fs_type = tokens[n - 3].to_string();
             let mount_point = tokens[1..n - 3].join(" ");
             if !mount_point.starts_with('/') || total_bytes == 0 {
+                return None;
+            }
+            // Belt and braces: even if the `-x` arguments were not applied
+            // (an unusual df, a caller passing raw output), a read-only image
+            // must not become a Critical "disk full" finding.
+            if EXCLUDED_FS.contains(&fs_type.as_str()) {
                 return None;
             }
             if !seen.insert(source.to_string()) {
@@ -101,6 +114,22 @@ Filesystem     Mounted on        Type   1B-blocks       Avail
         assert_eq!(disks[0].mount_point, "/media/My Disk");
         assert_eq!(disks[0].fs_type, "ext4");
         assert_eq!(disks[0].total_bytes, 1_000_000_000);
+    }
+
+    #[test]
+    fn read_only_images_are_not_reported_as_full_disks() {
+        // A mounted ISO and a squashfs image are always 100% full. Reporting
+        // them raised a Critical finding that capped the health score at 59.
+        let fixture = "\
+Filesystem     Mounted on          Type      1B-blocks   Avail
+/dev/sda2      /                   ext4     1000000000   500000000
+/dev/sr0       /media/user/ubuntu  iso9660  4700000000           0
+/dev/loop3     /snap/core22/1122   squashfs   77000000           0
+/dev/loop9     /media/img          erofs      12000000           0
+";
+        let disks = parse_df(fixture);
+        assert_eq!(disks.len(), 1, "only the real filesystem should remain");
+        assert_eq!(disks[0].mount_point, "/");
     }
 
     #[test]

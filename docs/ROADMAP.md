@@ -8,7 +8,7 @@ issues), CI (fmt + clippy + tests + build), GPL-3.0.
 - `sysmedic-core`: model, engine, weighted health score
 - 13 collectors: CPU, memory, disks, thermal, processes, services, packages,
   boot, logs, network, security, battery, snap
-- 28 diagnostic rules with stable ids
+- 29 diagnostic rules with stable ids
 - Bilingual (en/ar) offline knowledge base
 - `sysmedic checkup` (text/JSON/Markdown/HTML), `checks`, `explain`
 - Unit tests for every parser and rule; CI green

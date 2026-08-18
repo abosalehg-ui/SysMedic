@@ -116,17 +116,74 @@ pub fn parse_password_auth(config: &str) -> Option<bool> {
     parse_directive_bool(config, "PasswordAuthentication")
 }
 
-/// Best-effort firewall detection: `ufw status` when runnable (needs
-/// root), otherwise whether the ufw/firewalld service is active.
+/// ufw's own state file. World-readable (0644), so unlike `ufw status` it
+/// answers without root.
+const UFW_CONF: &str = "/etc/ufw/ufw.conf";
+
+/// Unit-file locations that tell us firewalld is installed at all. Without
+/// this check, `systemctl is-active firewalld` on a machine that has never
+/// heard of firewalld prints "inactive" — which would be reported as a
+/// disabled firewall rather than as no firewall.
+const FIREWALLD_UNITS: &[&str] = &[
+    "/usr/lib/systemd/system/firewalld.service",
+    "/lib/systemd/system/firewalld.service",
+    "/etc/systemd/system/firewalld.service",
+];
+
+/// Firewall state, in order of authority:
+///
+/// 1. `ufw status` — the live rule state, but it requires root.
+/// 2. `/etc/ufw/ufw.conf` (`ENABLED=yes|no`) — ufw's own persisted setting,
+///    readable by anyone.
+/// 3. firewalld's unit state, when firewalld is installed.
+///
+/// Step 2 is why this exists. The only branch that could ever return
+/// `Some(false)` was the root-only `ufw status`, and both the
+/// `security.firewall_inactive` rule and the `fix.enable_ufw` fix require
+/// exactly `Some(false)` — so on the normal unprivileged run (the mode the
+/// whole app is designed around) a machine with ufw installed and switched
+/// off reported no finding, offered no fix, and scored a clean 100 for
+/// Security. An absent answer was being read as a good one.
+///
+/// `None` still means "no firewall frontend we understand", e.g. a
+/// hand-rolled nftables ruleset — the rule stays quiet rather than guessing.
 fn firewall_active() -> Option<bool> {
     if let Some(out) = util::run("ufw", &["status"]) {
         return Some(out.contains("Status: active"));
     }
-    for service in ["ufw", "firewalld"] {
-        if let Some(out) = util::run("systemctl", &["is-active", service]) {
-            if out.trim() == "active" {
-                return Some(true);
-            }
+    if let Some(state) = util::read_file(UFW_CONF).and_then(|c| parse_ufw_conf(&c)) {
+        return Some(state);
+    }
+    if FIREWALLD_UNITS
+        .iter()
+        .any(|p| std::path::Path::new(p).exists())
+    {
+        // `is-active` exits non-zero for an inactive unit, so capture the
+        // output regardless of status rather than treating it as no answer.
+        if let Some(out) = util::run_captured("systemctl", &["is-active", "firewalld"]) {
+            return Some(out.stdout.trim() == "active");
+        }
+    }
+    None
+}
+
+/// `ENABLED=yes|no` out of `/etc/ufw/ufw.conf`, or `None` when the key is
+/// absent (which means the file is not ufw's config, so we know nothing).
+///
+/// The file is `KEY=value` shell-ish syntax with `#` comments; ufw writes
+/// `ENABLED=yes`/`ENABLED=no` in place when the firewall is toggled.
+pub fn parse_ufw_conf(config: &str) -> Option<bool> {
+    for line in config.lines() {
+        let line = line.trim();
+        if line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim().eq_ignore_ascii_case("ENABLED") {
+            let value = value.trim().trim_matches(['"', '\'']);
+            return Some(value.eq_ignore_ascii_case("yes"));
         }
     }
     None
@@ -188,6 +245,29 @@ mod tests {
     fn directives_inside_match_blocks_are_ignored() {
         let cfg = "PermitRootLogin no\nMatch Address 10.0.0.0/8\n    PermitRootLogin yes\n";
         assert_eq!(parse_permit_root_login(cfg), Some(false));
+    }
+
+    #[test]
+    fn ufw_conf_reports_the_disabled_state_without_root() {
+        // The case the old detection could never report: ufw installed and
+        // switched off, checked by an unprivileged process.
+        let conf = "# /etc/ufw/ufw.conf\nENABLED=no\nLOGLEVEL=low\n";
+        assert_eq!(parse_ufw_conf(conf), Some(false));
+    }
+
+    #[test]
+    fn ufw_conf_reports_the_enabled_state() {
+        assert_eq!(parse_ufw_conf("ENABLED=yes\nLOGLEVEL=low\n"), Some(true));
+        // Quoted and oddly-cased values are still understood.
+        assert_eq!(parse_ufw_conf("enabled=\"YES\"\n"), Some(true));
+        assert_eq!(parse_ufw_conf("ENABLED = no\n"), Some(false));
+    }
+
+    #[test]
+    fn ufw_conf_without_the_key_is_unknown() {
+        assert_eq!(parse_ufw_conf("LOGLEVEL=low\n"), None);
+        assert_eq!(parse_ufw_conf("#ENABLED=yes\n"), None);
+        assert_eq!(parse_ufw_conf(""), None);
     }
 
     #[test]

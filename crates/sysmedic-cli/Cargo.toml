@@ -22,3 +22,9 @@ sysmedic-history = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 owo-colors = { workspace = true }
+
+[dev-dependencies]
+# The end-to-end tests run the built binary and assert on its JSON output and
+# rule list, so they need to parse JSON and to see the declared rule set.
+serde_json = { workspace = true }
+sysmedic-diagnostics = { workspace = true }

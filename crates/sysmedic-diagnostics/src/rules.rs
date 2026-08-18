@@ -360,6 +360,41 @@ pub mod packages {
         .with_args(vec![format!("{:.1}", gb(bytes))])]
     }
 
+    /// The pending-security-update count is only as truthful as the index it
+    /// came from. A machine that has not refreshed in months reports "0
+    /// security updates pending" and scores a clean Security section — an
+    /// absence of knowledge presented as an all-clear, which is worse in a
+    /// security audit than saying nothing.
+    ///
+    /// Scored under Security (not Packages) on purpose: the doubt belongs to
+    /// the section whose number would otherwise be trusted.
+    pub fn index_stale(s: &Snapshot) -> Vec<Finding> {
+        let Some(pkgs) = &s.packages else {
+            return vec![];
+        };
+        let Some(days) = pkgs.index_age_days else {
+            return vec![];
+        };
+        if days <= thresholds::packages::INDEX_STALE_DAYS {
+            return vec![];
+        }
+        let refresh = match pkgs.manager.as_deref() {
+            Some("dnf") => "sudo dnf makecache",
+            Some("pacman") => "sudo pacman -Sy",
+            _ => "sudo apt update",
+        };
+        vec![Finding::new(
+            "security.index_stale",
+            Category::Security,
+            Severity::Medium,
+            format!("Package index is {days} days old"),
+            "Pending-update counts are computed from this index, so a stale one can report no \
+             security updates when several are waiting.",
+        )
+        .with_fix_hint(refresh)
+        .with_args(vec![days.to_string()])]
+    }
+
     pub fn security_updates(s: &Snapshot) -> Vec<Finding> {
         let Some(pkgs) = &s.packages else {
             return vec![];
@@ -802,6 +837,9 @@ pub mod tests_support {
             apt_cache_bytes: Some(2 * 1024 * 1024 * 1024),
             upgradable: Some(50),
             security_upgrades: Some(2),
+            // Old enough that the counts above cannot be trusted.
+            index_age_days: Some(45),
+            autoremovable: vec!["linux-image-6.8.0-45-generic".into(), "nodejs-doc".into()],
         });
         s.logs = Some(LogInfo {
             journal_bytes: Some(5 * 1024 * 1024 * 1024),
@@ -813,6 +851,7 @@ pub mod tests_support {
         s.snap = Some(SnapInfo {
             disabled_revisions: 3,
             snaps_dir_bytes: None,
+            refresh_retain: Some(10),
         });
         s.flatpak = Some(FlatpakInfo {
             unused_refs: vec!["runtime/org.freedesktop.Platform/x86_64/23.08".into()],

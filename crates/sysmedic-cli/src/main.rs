@@ -35,9 +35,13 @@ enum Command {
         /// Write the report to a file instead of stdout
         #[arg(long)]
         output: Option<PathBuf>,
-        /// Explanation language (defaults to $LANG)
+        /// Explanation language (defaults to $LC_ALL/$LC_MESSAGES/$LANG)
         #[arg(long, value_enum)]
         lang: Option<CliLang>,
+        /// Exit 1 when the worst finding is High, 2 when it is Critical
+        /// (default: always exit 0). For monitoring and CI.
+        #[arg(long)]
+        exit_code: bool,
     },
     /// List all diagnostic checks SysMedic performs
     Checks,
@@ -45,6 +49,7 @@ enum Command {
     Explain {
         /// Finding id, e.g. storage.disk_nearly_full
         id: String,
+        /// Explanation language (defaults to $LC_ALL/$LC_MESSAGES/$LANG)
         #[arg(long, value_enum)]
         lang: Option<CliLang>,
         /// Extra evidence to pass to a deep explanation (requires --deep)
@@ -133,7 +138,7 @@ fn resolve_lang(cli: Option<CliLang>) -> Lang {
     match cli {
         Some(CliLang::En) => Lang::En,
         Some(CliLang::Ar) => Lang::Ar,
-        None => Lang::from_locale(&std::env::var("LANG").unwrap_or_default()),
+        None => Lang::from_env(),
     }
 }
 
@@ -143,17 +148,53 @@ fn engine() -> Engine {
 
 use sysmedic_core::paths::{restrict_permissions, write_private};
 
-fn main() -> Result<()> {
+/// Process exit codes, so a scheduled checkup can be wired into monitoring.
+///
+/// Opt-in via `--exit-code`: `sysmedic checkup` has always exited 0 and
+/// scripts may depend on that, but exiting 0 on a failing disk meant the only
+/// way to act on a checkup was to parse its JSON.
+mod exit {
+    /// No finding worse than Medium.
+    pub const HEALTHY: u8 = 0;
+    /// The worst finding is High.
+    pub const DEGRADED: u8 = 1;
+    /// The worst finding is Critical.
+    pub const CRITICAL: u8 = 2;
+}
+
+/// The exit code a report earns, by its most severe finding.
+fn exit_code_for(report: &sysmedic_core::HealthReport) -> u8 {
+    use sysmedic_core::Severity;
+    match report.worst_severity() {
+        Some(Severity::Critical) => exit::CRITICAL,
+        Some(Severity::High) => exit::DEGRADED,
+        _ => exit::HEALTHY,
+    }
+}
+
+fn main() -> std::process::ExitCode {
+    match run() {
+        Ok(code) => std::process::ExitCode::from(code),
+        Err(e) => {
+            eprintln!("sysmedic: {e:#}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> Result<u8> {
     let cli = Cli::parse();
     match cli.command.unwrap_or(Command::Checkup {
         format: Format::Text,
         output: None,
         lang: None,
+        exit_code: false,
     }) {
         Command::Checkup {
             format,
             output,
             lang,
+            exit_code,
         } => {
             let lang = resolve_lang(lang);
             eprintln!("Running SysMedic checkup...");
@@ -176,7 +217,11 @@ fn main() -> Result<()> {
                         eprintln!("{e}\nHTML report written to {}", html_path.display());
                     }
                 }
-                return Ok(());
+                return Ok(if exit_code {
+                    exit_code_for(&report)
+                } else {
+                    exit::HEALTHY
+                });
             }
 
             let mut rendered = match format {
@@ -204,6 +249,9 @@ fn main() -> Result<()> {
                 }
                 None => println!("{rendered}"),
             }
+            if exit_code {
+                return Ok(exit_code_for(&report));
+            }
         }
         Command::Checks => {
             for name in engine().diagnostic_names() {
@@ -219,11 +267,19 @@ fn main() -> Result<()> {
             let lang = resolve_lang(lang);
             match sysmedic_knowledge::explain(&id, lang) {
                 Some(exp) => {
-                    println!("Cause:          {}", exp.cause);
-                    println!("Dangerous?      {}", exp.dangerous);
-                    println!("Impact:         {}", exp.impact);
-                    println!("Remedy:         {}", exp.remedy);
-                    println!("If ignored:     {}", exp.risk_if_ignored);
+                    // The five answers are localized, so their labels must be
+                    // too: `--lang ar` used to print Arabic explanations under
+                    // English field names.
+                    let l = text::explain_labels(lang);
+                    for (label, value) in [
+                        (l.cause, &exp.cause),
+                        (l.dangerous, &exp.dangerous),
+                        (l.impact, &exp.impact),
+                        (l.remedy, &exp.remedy),
+                        (l.if_ignored, &exp.risk_if_ignored),
+                    ] {
+                        println!("{label} {value}");
+                    }
                 }
                 None => {
                     anyhow::bail!(
@@ -275,7 +331,7 @@ fn main() -> Result<()> {
             ScheduleAction::Status => schedule::status()?,
         },
     }
-    Ok(())
+    Ok(exit::HEALTHY)
 }
 
 #[cfg(test)]

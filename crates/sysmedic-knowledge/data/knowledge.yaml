@@ -1,5 +1,16 @@
 # SysMedic knowledge base — one entry per finding id.
 # Each explanation answers: cause, dangerous?, impact, remedy, risk if ignored.
+#
+# Arabic typography policy (apply to every `ar:` block):
+#   * Percentages in prose use the Arabic percent sign ٪ (U+066A), never `%`.
+#     The file used to mix the two — "‏88٪" in one field and "95%" two lines
+#     below it — inside the same paragraph a reader sees at once.
+#   * Digits stay Western (0-9), matching how Saudi interfaces render numbers
+#     and how the values arrive from the collectors.
+#   * A literal shell command, path, unit name or size suffix keeps its Latin
+#     form: it is text the user has to type back verbatim.
+#   * Interpolated values ({0}, {1}, …) are wrapped in bidi isolates by
+#     `render_template`, so do not add direction marks here by hand.
 
 - id: storage.disk_nearly_full
   en:
@@ -12,10 +23,10 @@
     title: "نظام الملفات {0} ممتلئ بنسبة {1}٪"
     summary: "لم يتبق سوى {2} GiB من أصل {3} GiB على {0}."
     cause: "امتلأ نظام الملفات ببيانات متراكمة — حزم، ذاكرة تخزين مؤقتة، سجلات، حزم Snap أو ملفات المستخدم — أسرع مما يُنظَّف."
-    dangerous: "نعم عند تجاوز 95%: كثير من البرامج، بما فيها تحديثات النظام، تفشل أو تُتلف البيانات عند امتلاء القرص."
+    dangerous: "نعم عند تجاوز 95٪: كثير من البرامج، بما فيها تحديثات النظام، تفشل أو تُتلف البيانات عند امتلاء القرص."
     impact: "فشل التحديثات، انهيار التطبيقات عند الحفظ، وقد لا يقلع النظام بسلامة عند الامتلاء الكامل."
     remedy: "نظّف ذاكرة APT المؤقتة (sudo apt clean)، قلّص سجل journal (sudo journalctl --vacuum-size=200M)، أزل النوى وSnaps القديمة، ثم استخدم محلل القرص للعثور على الملفات الكبيرة."
-    risk_if_ignored: "سيصل القرص إلى 100% وقد يفشل سطح المكتب في الإقلاع أو تُفقد بيانات."
+    risk_if_ignored: "سيصل القرص إلى 100٪ وقد يفشل سطح المكتب في الإقلاع أو تُفقد بيانات."
 
 - id: memory.low_available
   en:
@@ -302,7 +313,7 @@
     cause: "بطاريات الليثيوم تشيخ كيميائيًا مع دورات الشحن والحرارة والزمن؛ تتقلص سعتها الكاملة."
     dangerous: "ليست خطيرة على النظام، لكن السعة تواصل التراجع."
     impact: "زمن أقصر بوضوح على البطارية؛ واحتمال انطفاء مفاجئ عند الشحن المنخفض."
-    remedy: "خطط لاستبدال البطارية؛ وحتى ذلك الحين حدّد أقصى شحن عند 80% إن دعمه الجهاز وتجنّب الحرارة."
+    remedy: "خطط لاستبدال البطارية؛ وحتى ذلك الحين حدّد أقصى شحن عند 80٪ إن دعمه الجهاز وتجنّب الحرارة."
     risk_if_ignored: "يستمر تقلص زمن التشغيل حتى يصبح الجهاز مقيدًا بالمقبس؛ والبطارية المنتفخة خطر مادي."
 
 - id: network.no_default_route
@@ -444,7 +455,23 @@
     title: "قرص SSD ‏{0} استهلك {1}٪ من عمر الكتابة المقدّر"
     summary: "مؤشر التآكل في NVMe مرتفع؛ يقترب القرص من حد التحمل المقدّر له."
     cause: "لأقراص SSD عدد محدود من عمليات الكتابة؛ ومؤشر التآكل يبيّن كم استُهلك من العمر المقدّر."
-    dangerous: "ليست خطيرة فورًا، لكن بعد ~90% يقترب القرص من حد تحمّله."
-    impact: "مع اقترابه من 100% قد يصبح SSD للقراءة فقط أو يبدأ بفشل الكتابة."
-    remedy: "أبقِ النسخ الاحتياطي حديثًا وخطط للاستبدال قبل بلوغه 100%."
+    dangerous: "ليست خطيرة فورًا، لكن بعد ~90٪ يقترب القرص من حد تحمّله."
+    impact: "مع اقترابه من 100٪ قد يصبح SSD للقراءة فقط أو يبدأ بفشل الكتابة."
+    remedy: "أبقِ النسخ الاحتياطي حديثًا وخطط للاستبدال قبل بلوغه 100٪."
     risk_if_ignored: "سيتوقف SSD في النهاية عن قبول الكتابة وقد تُفقد البيانات."
+
+- id: security.index_stale
+  en:
+    cause: "The package index has not been refreshed — the automatic update timer is off or disabled, or the machine is rarely online."
+    dangerous: "Indirectly, and that is what makes it worth flagging: the checkup reports how many security updates are pending, and it computes that from this index."
+    impact: "A checkup can report zero pending security updates while several are actually waiting upstream, so the Security section looks clean on evidence that is months old."
+    remedy: "Refresh the index (sudo apt update, sudo dnf makecache or sudo pacman -Sy), then re-run the checkup. If this keeps happening, re-enable the distribution's automatic update timer."
+    risk_if_ignored: "Known vulnerabilities stay unpatched while the report says everything is fine — the worst combination of the two."
+  ar:
+    title: "فهرس الحزم عمره {0} يوماً"
+    summary: "تُحسب أعداد التحديثات المعلّقة من هذا الفهرس، فالفهرس القديم قد يُظهر أنه لا توجد تحديثات أمنية بينما عدة تحديثات تنتظر."
+    cause: "لم يُحدَّث فهرس الحزم — إمّا أن مؤقّت التحديث التلقائي متوقّف أو معطّل، أو أن الجهاز نادراً ما يتصل بالإنترنت."
+    dangerous: "بشكل غير مباشر، وهذا سبب التنبيه أصلاً: الفحص يخبرك بعدد التحديثات الأمنية المعلّقة، وهو يحسبها من هذا الفهرس."
+    impact: "قد يقول الفحص إنه لا توجد تحديثات أمنية معلّقة بينما عدة تحديثات تنتظر فعلاً، فيبدو قسم الأمان سليماً استناداً إلى أدلة عمرها شهور."
+    remedy: "حدّث الفهرس (sudo apt update أو sudo dnf makecache أو sudo pacman -Sy) ثم أعد الفحص. وإن تكرّر الأمر، أعد تفعيل مؤقّت التحديث التلقائي في توزيعتك."
+    risk_if_ignored: "تبقى ثغرات معروفة دون ترقيع بينما يقول التقرير إن كل شيء سليم — وهو أسوأ اجتماع للأمرين."
