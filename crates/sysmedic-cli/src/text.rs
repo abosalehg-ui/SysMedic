@@ -17,6 +17,9 @@ struct Chrome {
     remedy: &'static str,
     try_: &'static str,
     skipped: &'static str,
+    coverage: &'static str,
+    coverage_note: &'static str,
+    not_measured: &'static str,
 }
 
 fn chrome(lang: Lang) -> Chrome {
@@ -29,6 +32,9 @@ fn chrome(lang: Lang) -> Chrome {
             remedy: "Remedy:",
             try_: "Try:",
             skipped: "Skipped checks:",
+            coverage: "Coverage",
+            coverage_note: "categories measured; the score is computed from those only",
+            not_measured: "not measured",
         },
         Lang::Ar => Chrome {
             health_score: "الدرجة الصحية",
@@ -38,6 +44,42 @@ fn chrome(lang: Lang) -> Chrome {
             remedy: "العلاج:",
             try_: "جرّب:",
             skipped: "فحوص متخطاة:",
+            coverage: "التغطية",
+            coverage_note: "فئة مقيسة؛ والدرجة محسوبة منها وحدها",
+            not_measured: "غير مقيس",
+        },
+    }
+}
+
+/// Field labels for `sysmedic explain`, aligned so the answers line up.
+pub struct ExplainLabels {
+    pub cause: &'static str,
+    pub dangerous: &'static str,
+    pub impact: &'static str,
+    pub remedy: &'static str,
+    pub if_ignored: &'static str,
+}
+
+/// Labels for the five explanation questions, in `lang`.
+///
+/// The answers come from the bilingual knowledge base, so printing them under
+/// hardcoded English labels left `sysmedic explain <id> --lang ar` half
+/// translated.
+pub fn explain_labels(lang: Lang) -> ExplainLabels {
+    match lang {
+        Lang::En => ExplainLabels {
+            cause: "Cause:         ",
+            dangerous: "Dangerous?     ",
+            impact: "Impact:        ",
+            remedy: "Remedy:        ",
+            if_ignored: "If ignored:    ",
+        },
+        Lang::Ar => ExplainLabels {
+            cause: "السبب:",
+            dangerous: "هل هي خطيرة؟",
+            impact: "التأثير:",
+            remedy: "العلاج:",
+            if_ignored: "إذا أُهملت:",
         },
     }
 }
@@ -64,7 +106,34 @@ pub fn render(report: &HealthReport, lang: Lang) -> String {
     );
     let _ = writeln!(out);
 
+    // State the coverage next to the score: 100/100 across six of twelve
+    // categories is a different claim from 100/100 across all of them, and the
+    // report used to render the two identically.
+    if report.coverage.is_partial() {
+        let _ = writeln!(
+            out,
+            "  {}",
+            format!(
+                "{}: {} — {}",
+                c.coverage,
+                report.coverage.label(),
+                c.coverage_note
+            )
+            .dimmed()
+        );
+        let _ = writeln!(out);
+    }
+
     for cs in &report.category_scores {
+        if !cs.measured {
+            let _ = writeln!(
+                out,
+                "  {:<10} {}",
+                cs.category.label_in(lang),
+                c.not_measured.dimmed()
+            );
+            continue;
+        }
         let filled = (cs.score as usize) / 10;
         let bar: String = "█".repeat(filled) + &"░".repeat(10 - filled);
         let _ = writeln!(
@@ -91,7 +160,10 @@ pub fn render(report: &HealthReport, lang: Lang) -> String {
     }
 
     for f in &report.findings {
-        let badge = format!("[{}]", f.severity.label().to_uppercase());
+        // The user-facing label, not the machine one: an Arabic report used to
+        // print `[CRITICAL]` above an Arabic sentence. `Severity::label()`
+        // stays for CSS classes and JSON.
+        let badge = format!("[{}]", f.severity.label_in(lang).to_uppercase());
         let badge = match f.severity {
             Severity::Critical | Severity::High => badge.red().bold().to_string(),
             Severity::Medium => badge.yellow().bold().to_string(),

@@ -135,6 +135,12 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
     area.set_focusable(true);
     area.set_can_focus(true);
 
+    // The treemap is drawn by hand with cairo, so GTK's automatic mirroring
+    // does not reach it: in an Arabic window every other widget flipped while
+    // the tiles stayed left-to-right, and the arrow keys walked against the
+    // visual order. Both are mirrored explicitly below.
+    let rtl = matches!(lang, Lang::Ar);
+
     area.set_draw_func({
         let tree = tree.clone();
         let tiles = tiles.clone();
@@ -147,6 +153,7 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
                 tree.borrow().as_ref(),
                 *selection.borrow(),
                 widget.has_focus(),
+                rtl,
             );
             *tiles.borrow_mut() = drawn;
         }
@@ -167,8 +174,18 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
             }
             let current = selection.borrow().unwrap_or(0);
             let next = match key {
-                gtk::gdk::Key::Right | gtk::gdk::Key::Down => Some((current + 1) % count),
-                gtk::gdk::Key::Left | gtk::gdk::Key::Up => Some((current + count - 1) % count),
+                // Down/Up always advance and retreat; the horizontal pair
+                // follows the visual order, which is mirrored in RTL.
+                gtk::gdk::Key::Down => Some((current + 1) % count),
+                gtk::gdk::Key::Up => Some((current + count - 1) % count),
+                gtk::gdk::Key::Right | gtk::gdk::Key::Left => {
+                    let forward = (key == gtk::gdk::Key::Right) != rtl;
+                    Some(if forward {
+                        (current + 1) % count
+                    } else {
+                        (current + count - 1) % count
+                    })
+                }
                 gtk::gdk::Key::Home => Some(0),
                 gtk::gdk::Key::End => Some(count - 1),
                 _ => None,
@@ -368,16 +385,34 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
         }
     });
 
-    match std::env::var("HOME")
-        .ok()
-        .filter(|h| !h.is_empty())
-        .map(std::path::PathBuf::from)
-    {
-        Some(path) => start_scan(path),
-        // Silently scanning `/` instead would be a minutes-long walk the user
-        // never asked for; invite them to pick a folder.
-        None => subtitle.set_text(strings.disk_pick_a_folder),
-    }
+    // Scan lazily, the first time this page is actually shown.
+    //
+    // The page is built with the window, so kicking the scan off here walked
+    // the whole of `$HOME` on every launch — minutes of I/O and battery on a
+    // large home directory — even for a user who only ever opens the Overview
+    // tab. On a machine slow enough to need SysMedic, the diagnostic tool was
+    // itself the load.
+    let scanned_once = Rc::new(std::cell::Cell::new(false));
+    root.connect_map({
+        let start_scan = start_scan.clone();
+        let scanned_once = scanned_once.clone();
+        let subtitle = subtitle.clone();
+        move |_| {
+            if scanned_once.replace(true) {
+                return;
+            }
+            match std::env::var("HOME")
+                .ok()
+                .filter(|h| !h.is_empty())
+                .map(std::path::PathBuf::from)
+            {
+                Some(path) => start_scan(path),
+                // Silently scanning `/` instead would be a minutes-long walk
+                // the user never asked for; invite them to pick a folder.
+                None => subtitle.set_text(strings.disk_pick_a_folder),
+            }
+        }
+    });
 
     root
 }
@@ -391,6 +426,7 @@ fn draw_treemap(
     tree: Option<&Node>,
     selected: Option<usize>,
     focused: bool,
+    rtl: bool,
 ) -> Vec<sysmedic_diskscan::Tile> {
     let (w, h) = (width as f64, height as f64);
     let Some(tree) = tree else {
@@ -402,7 +438,7 @@ fn draw_treemap(
         .take(MAX_TILES)
         .map(|c| (c.name.clone(), c.size))
         .collect();
-    let tiles = squarify(
+    let mut tiles = squarify(
         &items,
         Rect {
             x: 0.0,
@@ -411,6 +447,11 @@ fn draw_treemap(
             h,
         },
     );
+    if rtl {
+        for tile in &mut tiles {
+            tile.rect.x = mirror_x(tile.rect.x, tile.rect.w, w);
+        }
+    }
 
     for (i, tile) in tiles.iter().enumerate() {
         let (r, g, b) = color_for(&tile.label);
@@ -458,6 +499,13 @@ fn draw_treemap(
     tiles
 }
 
+/// Flip a tile's x coordinate for a right-to-left layout: the largest entry
+/// belongs in the top-*right* corner when the rest of the window reads that
+/// way. Pure, so the mirroring is unit-tested without a drawing context.
+fn mirror_x(x: f64, tile_width: f64, canvas_width: f64) -> f64 {
+    canvas_width - x - tile_width
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,6 +545,17 @@ mod tests {
                 "label on {bg:?} is too close in luminance to its tile"
             );
         }
+    }
+
+    #[test]
+    fn rtl_mirrors_tiles_across_the_canvas() {
+        // A tile hugging the left edge in LTR must hug the right edge in RTL.
+        assert_eq!(mirror_x(0.0, 100.0, 800.0), 700.0);
+        assert_eq!(mirror_x(700.0, 100.0, 800.0), 0.0);
+        // A full-width tile is unchanged, and mirroring twice is the identity.
+        assert_eq!(mirror_x(0.0, 800.0, 800.0), 0.0);
+        let (x, w, canvas) = (120.0, 60.0, 800.0);
+        assert_eq!(mirror_x(mirror_x(x, w, canvas), w, canvas), x);
     }
 
     #[test]

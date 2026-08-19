@@ -6,21 +6,47 @@
   <vendor>SysMedic</vendor>
   <vendor_url>https://github.com/abosalehg-ui/SysMedic</vendor_url>
 
+  <!--
+    Two actions, one per class of change.
+
+    pkexec derives the action from the path of the program it launches, so a
+    single helper binary could only ever map to a single action — and a single
+    action meant one generic prompt ("Apply a SysMedic system fix") for both
+    "empty the download cache" and "purge packages and their configuration
+    files". SysMedic therefore ships two helpers, each accepting only the fix
+    ids of its own class, so the dialog describes what is really about to
+    happen and an administrator can allow the routine class without the other.
+
+    Both use auth_admin (not _keep): a cached authorization would let any
+    process in the session re-invoke a helper without a prompt. One prompt per
+    fix is the right trade-off for a tool that applies one fix at a time.
+  -->
+
   <action id="io.github.abosalehg_ui.sysmedic.run-fix">
-    <description>Apply a SysMedic system fix</description>
-    <description xml:lang="ar">تطبيق إصلاح نظام من SysMedic</description>
-    <message>Authentication is required to apply a system fix</message>
-    <message xml:lang="ar">المصادقة مطلوبة لتطبيق إصلاح على النظام</message>
+    <description>Apply a reversible SysMedic system fix</description>
+    <description xml:lang="ar">تطبيق إصلاح نظام قابل للتراجع من SysMedic</description>
+    <message>Authentication is required to change a system setting. SysMedic can undo this change.</message>
+    <message xml:lang="ar">المصادقة مطلوبة لتغيير إعداد في النظام. يستطيع SysMedic التراجع عن هذا التغيير.</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
-      <!-- auth_admin (not _keep): a cached authorization would let any process
-           in the session re-invoke the helper (e.g. `undo` right after the user
-           enabled the firewall) without a prompt. One prompt per fix is the
-           right trade-off for a tool that applies one fix at a time. -->
       <allow_active>auth_admin</allow_active>
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/sysmedic-fix-helper</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="io.github.abosalehg_ui.sysmedic.run-fix-destructive">
+    <description>Apply a SysMedic fix that permanently deletes data</description>
+    <description xml:lang="ar">تطبيق إصلاح من SysMedic يحذف بيانات نهائياً</description>
+    <message>Authentication is required to permanently remove packages, cached files or log history. This change cannot be undone.</message>
+    <message xml:lang="ar">المصادقة مطلوبة لإزالة حزم أو ملفات مخزّنة مؤقتاً أو سجلات بشكل نهائي. لا يمكن التراجع عن هذا التغيير.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/sysmedic-fix-helper-destructive</annotate>
     <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
   </action>
 </policyconfig>

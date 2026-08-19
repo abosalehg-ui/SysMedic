@@ -6,9 +6,20 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+# Two thin binaries over one library: pkexec derives its polkit action from the
+# path of the program it launches, so a separate action for destructive fixes
+# needs a separate executable. Each binary accepts only its own tier's fix ids.
+[lib]
+name = "sysmedic_fix_helper"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sysmedic-fix-helper"
-path = "src/main.rs"
+path = "src/bin/sysmedic-fix-helper.rs"
+
+[[bin]]
+name = "sysmedic-fix-helper-destructive"
+path = "src/bin/sysmedic-fix-helper-destructive.rs"
 
 [dependencies]
 sysmedic-core = { workspace = true }

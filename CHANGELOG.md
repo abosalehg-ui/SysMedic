@@ -4,6 +4,113 @@
 ## [Unreleased]
 
 ### Security
+
+- **The firewall check can finally fire.** `firewall_active()` could only ever
+  return `Some(false)` from `ufw status`, which needs root — and both the
+  `security.firewall_inactive` rule and `fix.enable_ufw` require exactly that
+  value. On the normal unprivileged run (the mode the whole app is built
+  around) a machine with ufw installed and switched off produced no finding, no
+  fix button, and a clean 100 for Security. It now reads `ENABLED=` from
+  `/etc/ufw/ufw.conf`, which is world-readable, and falls back to firewalld's
+  unit state only when firewalld is actually installed.
+- **New rule `security.index_stale`.** The pending-security-update count is
+  computed from the package index, so on a machine that has not refreshed in
+  months "0 security updates pending" was an absence of knowledge reported as
+  an all-clear. The index age is now collected (apt, dnf and pacman) and a
+  Medium finding is raised past seven days.
+- **UDP sockets are audited.** `security.exposed_ports` describes itself as
+  "services listening on the network" but only read `/proc/net/tcp{,6}`, so
+  mDNS/avahi, a resolver on 53, SSDP and WireGuard were invisible. `/proc/net/udp{,6}`
+  is now parsed too.
+- **Two privileged helpers, two polkit actions.** pkexec derives its action
+  from the path of the program it launches, so one binary meant one generic
+  prompt for both "empty the download cache" and "purge packages and their
+  configuration". `sysmedic-fix-helper` now handles reversible setting changes
+  and `sysmedic-fix-helper-destructive` the rest; each refuses the other's fix
+  ids, and an administrator can allow one class without the other.
+- **The PDF converter runs under the sanitized `PATH`, and with a timeout.**
+  It was the one external command that inherited the ambient `PATH`, and the
+  only one with no time limit — a wedged headless browser hung the CLI
+  indefinitely. Tool detection no longer launches each candidate browser just
+  to ask its version, and the output path is made absolute so it cannot be
+  read as an option.
+
+### Fixed
+
+- **A mounted ISO no longer tanks the health score.** `iso9660`, `udf` and
+  `erofs` are read-only images that are 100% full by construction; they were
+  raising a Critical `storage.disk_nearly_full` finding, and a Critical caps
+  the overall score at 59. Plugging in an install USB dropped the machine from
+  "Excellent" to "Poor".
+- **The score no longer counts what was never measured.** A category with no
+  data produced no findings and therefore scored 100, so a container without
+  systemd, battery or SMART graded higher than a laptop with one full disk.
+  The weighted average now covers measured categories only, and the report,
+  dashboard and JSON carry a `coverage` figure ("9/12") next to the score.
+- **`undo` for `fix.snap_retain` restores the user's own value.** It hardcoded
+  snapd's default of 3, so someone running `refresh.retain=10` who applied the
+  fix and pressed undo silently ended up at 3 — which makes "reversible: yes"
+  in the consent dialog untrue. The previous value is captured in the plan,
+  carried in the journal, and validated as an integer in snapd's range before
+  a root process substitutes it.
+- **The `fix.autoremove` preview names what it actually removes.** It spoke of
+  old kernels while `autoremove --purge` deletes every auto-installed package
+  nothing needs any more, along with their `/etc` configuration. The plan now
+  lists the packages (from an unprivileged `apt-get -s` simulation) and lists
+  `/etc` among the affected paths.
+- **Severity badges are localized.** The GUI and the terminal report printed
+  the machine-facing `CRITICAL` above Arabic text; they now use
+  `Severity::label_in`, which already existed and was already used by the HTML
+  report.
+- **Values interpolated into Arabic text are bidi-isolated.** Mount points,
+  device nodes and unit names are Latin/neutral runs inside RTL sentences, so
+  the bidi algorithm reordered them on screen — a finding title could show its
+  path scrambled. `render_template` now wraps each value in FSI/PDI, which
+  fixes the GUI, terminal, HTML and Markdown at once.
+- **The GUI pins its text direction.** The app chose Arabic strings from the
+  environment while GTK derived layout direction from its own translations; if
+  those were missing (slim container, Flatpak without locale data) the result
+  was Arabic text in a left-to-right layout.
+- **The disk page scans lazily.** Building the window kicked off a full walk of
+  `$HOME` on every launch, even for a user who never opened the Disk Usage
+  tab — minutes of I/O and battery on a large home directory. It now scans the
+  first time the page is actually shown.
+- **The treemap mirrors in RTL.** It is drawn by hand with cairo, so GTK's
+  automatic mirroring never reached it: in an Arabic window the tiles stayed
+  left-to-right and the arrow keys walked against the visual order.
+- **Language detection follows POSIX.** All five entry points read `LANG`
+  alone; `LC_ALL` and `LC_MESSAGES` now take precedence, from one shared
+  `Lang::from_env()` instead of five copies of the same line.
+- **`sysmedic explain --lang ar` prints Arabic labels.** The five answers were
+  localized but their field names were hardcoded English.
+
+### Added
+
+- `sysmedic checkup --exit-code` exits 1 when the worst finding is High and 2
+  when it is Critical, so a scheduled checkup can drive monitoring. Without the
+  flag the exit code stays 0, as scripts have always been able to rely on.
+- End-to-end tests for the `sysmedic` binary (`crates/sysmedic-cli/tests/cli.rs`):
+  the `--format json` shape, the exit-code contract, refusal of unknown finding
+  and fix ids, and bilingual `explain` output. Everything else in the workspace
+  is a unit test over a pure function; nothing covered the interface people
+  actually script against.
+- The GUI string tables are checked exhaustively (every field, both languages)
+  by destructuring `Strings`, so a newly added string cannot ship untranslated.
+
+### Changed
+
+- The default deep-explanation model is `claude-opus-5`. The previous id was
+  stale and would be rejected, which made `--deep` fail silently back to the
+  offline answer. `max_tokens` was also raised from 1024, which current models
+  can spend on reasoning before the answer begins, and the request asks for low
+  effort since restating a diagnosed finding is not a hard reasoning task.
+- Arabic prose in the knowledge base uses the Arabic percent sign `٪`
+  consistently; the file mixed it with `%` inside the same paragraph. The
+  policy is documented at the top of `knowledge.yaml`.
+- `CODE_REVIEW_SysMedic_2026-08-03.md` moved to `docs/`, alongside the other
+  reviews.
+
+### Security
 - Report and state files are now forced to `0600` **after** opening, not only
   at creation. `OpenOptions::mode` is ignored for a file that already exists,
   so regenerating a report over one an editor had rewritten as `0644` silently

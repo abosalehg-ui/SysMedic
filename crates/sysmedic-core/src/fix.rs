@@ -54,6 +54,12 @@ pub struct FixPlan {
     pub reversible: bool,
     /// Commands that undo the fix, when `reversible` (empty otherwise).
     pub undo: Vec<FixCommand>,
+    /// The setting this fix is about to overwrite, captured from the snapshot
+    /// so `undo` can put back *the user's* value instead of a hardcoded
+    /// default. Carried into the journal entry; `None` when the fix changes no
+    /// such setting, or when the current value could not be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restore: Option<String>,
     /// Residual risk of applying the fix.
     pub risk: Severity,
     /// Whether the fix needs root (nearly always true).
@@ -170,6 +176,7 @@ mod tests {
             affected_paths: vec!["/etc/ufw".into()],
             reversible: true,
             undo: vec![FixCommand::new("ufw", &["disable"])],
+            restore: None,
             risk: Severity::Low,
             needs_root: true,
         };

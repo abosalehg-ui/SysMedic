@@ -10,7 +10,7 @@ use std::process::Command;
 use anyhow::{bail, Result};
 use owo_colors::{OwoColorize, Stream};
 use sysmedic_core::{Lang, Snapshot};
-use sysmedic_fixes::{self as fixes, helper_path, Journal, RealRunner};
+use sysmedic_fixes::{self as fixes, Journal, RealRunner};
 
 /// Resolve the journal path, or explain why there isn't one.
 fn journal() -> Result<Journal> {
@@ -21,7 +21,7 @@ fn journal() -> Result<Journal> {
 }
 
 fn user_lang() -> Lang {
-    Lang::from_locale(&std::env::var("LANG").unwrap_or_default())
+    Lang::from_env()
 }
 
 fn collect() -> Snapshot {
@@ -105,7 +105,11 @@ pub fn apply(id: &str, dry_run: bool, yes: bool) -> Result<()> {
         }
         Ok(())
     } else {
-        delegate(&["apply", id])
+        // Which helper — and therefore which polkit prompt — depends on
+        // whether this fix can be undone.
+        let helper =
+            fixes::helper_for_fix(id).ok_or_else(|| anyhow::anyhow!("fix '{id}' is unknown"))?;
+        delegate(&helper, &["apply", id])
     }
 }
 
@@ -149,14 +153,13 @@ pub fn undo(yes: bool) -> Result<()> {
         );
         Ok(())
     } else {
-        delegate(&["undo"])
+        delegate(&fixes::undo_helper(), &["undo"])
     }
 }
 
 /// Replace this process with `pkexec <helper> <args...>` so polkit authorizes
 /// the privileged step. Never returns on success.
-fn delegate(args: &[&str]) -> Result<()> {
-    let helper = helper_path();
+fn delegate(helper: &str, args: &[&str]) -> Result<()> {
     eprintln!(
         "{}",
         format!(
@@ -165,7 +168,7 @@ fn delegate(args: &[&str]) -> Result<()> {
         )
         .dimmed()
     );
-    let err = Command::new("pkexec").arg(&helper).args(args).exec();
+    let err = Command::new("pkexec").arg(helper).args(args).exec();
     // exec only returns on failure.
     bail!("could not launch pkexec: {err}. Is polkit installed and the helper at {helper}?");
 }

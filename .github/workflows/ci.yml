@@ -78,6 +78,10 @@ jobs:
           packaging/deb/build-deb.sh
           dpkg-deb --info sysmedic_*.deb
           dpkg-deb --contents sysmedic_*.deb | grep -q usr/bin/sysmedic
+          # Both privileged helpers must ship: each maps to its own polkit
+          # action, and a missing one makes that class of fix unavailable.
+          dpkg-deb --contents sysmedic_*.deb | grep -q usr/libexec/sysmedic-fix-helper$
+          dpkg-deb --contents sysmedic_*.deb | grep -q usr/libexec/sysmedic-fix-helper-destructive
 
   # Fail the build on known RUSTSEC advisories in Cargo.lock. Dependabot keeps
   # dependencies fresh; this gate catches an advisory landing between updates —

@@ -21,6 +21,37 @@ impl Lang {
             Lang::En
         }
     }
+
+    /// The user's language, from the environment.
+    ///
+    /// POSIX gives message catalogues a precedence order — `LC_ALL` overrides
+    /// everything, then `LC_MESSAGES`, then `LANG` — and every entry point
+    /// (CLI, GUI, the privileged helper) previously read `LANG` alone, in five
+    /// separate copies of the same line. A user whose shell sets
+    /// `LC_ALL=ar_SA.UTF-8` on top of an English `LANG` got English output.
+    pub fn from_env() -> Lang {
+        for key in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+            if let Some(value) = std::env::var(key).ok().filter(|v| !v.is_empty()) {
+                return Lang::from_locale(&value);
+            }
+        }
+        Lang::En
+    }
+}
+
+/// Wrap `value` in Unicode bidi isolates (FSI … PDI) so it keeps its own
+/// direction when embedded in text of the opposite one.
+///
+/// Arabic finding titles interpolate machine values — mount points, device
+/// nodes, unit names, numbers. Inside an RTL sentence the bidi algorithm
+/// reorders those (a path is a run of neutrals and Latin), so
+/// `نظام الملفات /boot/efi ممتلئ` rendered with the path visually mangled.
+/// FSI (U+2068) opens a run whose direction is detected from its own first
+/// strong character; PDI (U+2069) closes it. Both are formatting characters,
+/// not control characters, so terminal sanitizing keeps them and terminals
+/// that don't implement bidi ignore them.
+pub fn isolate(value: &str) -> String {
+    format!("\u{2068}{value}\u{2069}")
 }
 
 /// A short piece of user-facing text carried in both supported languages.
@@ -76,5 +107,14 @@ mod tests {
         assert_eq!(Lang::from_locale("en_US.UTF-8"), Lang::En);
         assert_eq!(Lang::from_locale("C"), Lang::En);
         assert_eq!(Lang::from_locale(""), Lang::En);
+    }
+
+    #[test]
+    fn isolate_wraps_in_fsi_pdi() {
+        assert_eq!(isolate("/boot/efi"), "\u{2068}/boot/efi\u{2069}");
+        // The isolates are format characters, not control characters, so the
+        // terminal sanitizer keeps them.
+        assert!(!'\u{2068}'.is_control());
+        assert!(!'\u{2069}'.is_control());
     }
 }

@@ -47,6 +47,8 @@ pub struct Strings {
     pub disk_cancelled: &'static str,
     pub disk_partial: &'static str,
     pub disk_pick_a_folder: &'static str,
+    pub coverage_note: &'static str,
+    pub not_measured: &'static str,
 }
 
 impl Strings {
@@ -95,6 +97,8 @@ impl Strings {
                 disk_cancelled: "Scan stopped — nothing measured yet.",
                 disk_partial: "Partial scan · ",
                 disk_pick_a_folder: "Choose a folder to scan.",
+                coverage_note: "categories measured; the score is computed from those only",
+                not_measured: "not measured",
             },
             Lang::Ar => &Strings {
                 health_score: "الدرجة الصحية",
@@ -137,6 +141,8 @@ impl Strings {
                 disk_cancelled: "أُوقف الفحص — لم يُقَس شيء بعد.",
                 disk_partial: "فحص جزئي · ",
                 disk_pick_a_folder: "اختر مجلداً لفحصه.",
+                coverage_note: "فئة مقيسة؛ والدرجة محسوبة منها وحدها",
+                not_measured: "غير مقيس",
             },
         }
     }
@@ -163,6 +169,9 @@ pub fn score_css(score: u8) -> &'static str {
 pub struct CategoryRow {
     pub label: &'static str,
     pub score: u8,
+    /// False when the checkup gathered no data for this category, so the view
+    /// can say "not measured" instead of drawing a full bar.
+    pub measured: bool,
 }
 
 pub fn category_rows(report: &HealthReport, lang: Lang) -> Vec<CategoryRow> {
@@ -172,6 +181,7 @@ pub fn category_rows(report: &HealthReport, lang: Lang) -> Vec<CategoryRow> {
         .map(|cs| CategoryRow {
             label: cs.category.label_in(lang),
             score: cs.score,
+            measured: cs.measured,
         })
         .collect()
 }
@@ -238,40 +248,123 @@ mod tests {
         assert!(ar.iter().any(|r| r.label == "التخزين"));
     }
 
+    /// Every field of [`Strings`], as `(name, value)` pairs.
+    ///
+    /// Hand-listing a subset meant a newly added string could ship with an
+    /// empty or untranslated Arabic value and no test would notice — the old
+    /// checks covered nine of the (then) forty-five fields. Adding a field to
+    /// the struct without adding it here fails to compile, because the
+    /// destructuring below is exhaustive.
+    fn all_strings(s: &'static Strings) -> Vec<(&'static str, &'static str)> {
+        // Destructured exhaustively on purpose: `..` is deliberately absent.
+        let Strings {
+            health_score,
+            run_checkup,
+            checking,
+            categories,
+            findings,
+            no_findings,
+            evidence,
+            suggested_command,
+            skipped_checks,
+            checkup_failed,
+            apply_fix,
+            confirm_fix_title,
+            cancel,
+            apply,
+            ok,
+            fix_failed_title,
+            fix_failed_body,
+            reversible_yes,
+            reversible_no,
+            about,
+            app_comment,
+            overview,
+            disk_usage,
+            disk_scanning,
+            disk_scan_failed,
+            disk_empty,
+            disk_largest,
+            history_tooltip,
+            fix_running,
+            fix_applied,
+            export_report,
+            export_first,
+            export_done,
+            export_failed,
+            treemap_a11y,
+            disk_choose_folder,
+            disk_cancel,
+            disk_cancelled,
+            disk_partial,
+            disk_pick_a_folder,
+            coverage_note,
+            not_measured,
+        } = s;
+        vec![
+            ("health_score", health_score),
+            ("run_checkup", run_checkup),
+            ("checking", checking),
+            ("categories", categories),
+            ("findings", findings),
+            ("no_findings", no_findings),
+            ("evidence", evidence),
+            ("suggested_command", suggested_command),
+            ("skipped_checks", skipped_checks),
+            ("checkup_failed", checkup_failed),
+            ("apply_fix", apply_fix),
+            ("confirm_fix_title", confirm_fix_title),
+            ("cancel", cancel),
+            ("apply", apply),
+            ("ok", ok),
+            ("fix_failed_title", fix_failed_title),
+            ("fix_failed_body", fix_failed_body),
+            ("reversible_yes", reversible_yes),
+            ("reversible_no", reversible_no),
+            ("about", about),
+            ("app_comment", app_comment),
+            ("overview", overview),
+            ("disk_usage", disk_usage),
+            ("disk_scanning", disk_scanning),
+            ("disk_scan_failed", disk_scan_failed),
+            ("disk_empty", disk_empty),
+            ("disk_largest", disk_largest),
+            ("history_tooltip", history_tooltip),
+            ("fix_running", fix_running),
+            ("fix_applied", fix_applied),
+            ("export_report", export_report),
+            ("export_first", export_first),
+            ("export_done", export_done),
+            ("export_failed", export_failed),
+            ("treemap_a11y", treemap_a11y),
+            ("disk_choose_folder", disk_choose_folder),
+            ("disk_cancel", disk_cancel),
+            ("disk_cancelled", disk_cancelled),
+            ("disk_partial", disk_partial),
+            ("disk_pick_a_folder", disk_pick_a_folder),
+            ("coverage_note", coverage_note),
+            ("not_measured", not_measured),
+        ]
+    }
+
     #[test]
     fn no_string_is_empty_in_either_language() {
         // A missing translation shows as a blank label rather than a fallback,
         // so an empty string is a bug in either language.
         for lang in [Lang::En, Lang::Ar] {
-            let s = Strings::for_lang(lang);
-            for (name, value) in [
-                ("disk_choose_folder", s.disk_choose_folder),
-                ("disk_cancel", s.disk_cancel),
-                ("disk_cancelled", s.disk_cancelled),
-                ("disk_partial", s.disk_partial),
-                ("disk_pick_a_folder", s.disk_pick_a_folder),
-                ("treemap_a11y", s.treemap_a11y),
-                ("export_report", s.export_report),
-                ("apply_fix", s.apply_fix),
-                ("confirm_fix_title", s.confirm_fix_title),
-            ] {
+            for (name, value) in all_strings(Strings::for_lang(lang)) {
                 assert!(!value.trim().is_empty(), "{name} is empty for {lang:?}");
             }
         }
     }
 
     #[test]
-    fn arabic_strings_are_actually_arabic() {
+    fn every_arabic_string_is_actually_arabic() {
         // Guards against a copy-paste that leaves an English string in the
         // Arabic table — which the emptiness check above would not catch.
-        let ar = Strings::for_lang(Lang::Ar);
-        for (name, value) in [
-            ("disk_choose_folder", ar.disk_choose_folder),
-            ("disk_cancel", ar.disk_cancel),
-            ("disk_pick_a_folder", ar.disk_pick_a_folder),
-            ("apply_fix", ar.apply_fix),
-            ("confirm_fix_title", ar.confirm_fix_title),
-        ] {
+        // `disk_partial` is a prefix ending in a separator, and `app_comment`
+        // and the rest still have to carry Arabic script.
+        for (name, value) in all_strings(Strings::for_lang(Lang::Ar)) {
             assert!(
                 value
                     .chars()
@@ -279,6 +372,16 @@ mod tests {
                 "{name} has no Arabic characters: {value}"
             );
         }
+    }
+
+    #[test]
+    fn the_two_tables_have_the_same_fields_in_the_same_order() {
+        let en = all_strings(Strings::for_lang(Lang::En));
+        let ar = all_strings(Strings::for_lang(Lang::Ar));
+        assert_eq!(
+            en.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
+            ar.iter().map(|(n, _)| *n).collect::<Vec<_>>()
+        );
     }
 
     #[test]

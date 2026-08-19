@@ -44,7 +44,7 @@ of a doctor's visit:
 | Step | What you get |
 |---|---|
 | **Checkup** | One command scans CPU, RAM, swap, disks, thermal, battery, services, processes, boot, logs, packages, network and security → a 0–100 health score |
-| **Diagnose** | 28 rules: slow boot, full disks, zombie processes, overheating, failed services, broken/old packages, huge logs, snap bloat, DNS issues, SSH root login, inactive firewall... |
+| **Diagnose** | 29 rules: slow boot, full disks, zombie processes, overheating, failed services, broken/old packages, huge logs, snap bloat, DNS issues, SSH root login, inactive firewall... |
 | **Explain** | Every finding answers, offline and in English + العربية: what caused it? is it dangerous? what's the impact? how do I fix it? what if I ignore it? |
 | **Prescribe** | One-click safe fixes with a mandatory preview (what runs, which files change, is it reversible) and undo, authorized via polkit — the app never runs as root |
 | **Follow-up** | Scheduled checkups, proactive notifications and a health-score trend |
@@ -68,6 +68,7 @@ risk if ignored) with evidence and a suggested command.
 ```bash
 cargo run --release -p sysmedic-cli -- checkup            # colored report
 sysmedic checkup --format json                            # machine-readable
+sysmedic checkup --exit-code                              # exit 1 on High, 2 on Critical
 sysmedic checkup --format html --output report.html       # shareable report
 sysmedic explain storage.disk_nearly_full --lang ar       # explain any finding
 sysmedic checks                                           # list all rules
@@ -105,9 +106,12 @@ sysmedic undo --yes                         # revert the last reversible fix
 
 Before anything changes you see exactly what will run, which paths it touches,
 its risk, and whether it can be undone. The GUI and CLI never run as root: the
-privileged step goes through `sysmedic-fix-helper`, launched via **pkexec** and
+privileged step goes through a small helper launched via **pkexec** and
 authorized by **polkit**. The helper accepts a fix *id* only and rebuilds the
-plan itself, so no command can be injected. Every applied fix is recorded in a
+plan itself, so no command can be injected. There are two of them — one for
+reversible setting changes and one for changes that permanently delete
+something — so the authorization prompt says which kind you are approving, and
+each refuses the other's fixes. Every applied fix is recorded in a
 transaction journal (`/var/lib/sysmedic/journal.json`) that powers `undo`.
 Current fixes: clear APT cache, trim the journal, remove old kernels, reduce
 retained snap revisions, remove unused Flatpak runtimes, enable the firewall.

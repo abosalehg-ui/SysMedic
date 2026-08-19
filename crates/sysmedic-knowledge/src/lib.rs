@@ -114,10 +114,18 @@ fn localized_field(
 /// Substitute `{0}`, `{1}`, … with `args`. Unknown or out-of-range
 /// placeholders are left verbatim so a template/args mismatch is visible in
 /// tests instead of silently dropping data.
+///
+/// Each value is wrapped in bidi isolates (see [`sysmedic_core::lang::isolate`]).
+/// The templates are Arabic sentences and the values are machine text —
+/// `/boot/efi`, `nvme0n1`, `x86_pkg_temp`, bare numbers — which the bidi
+/// algorithm otherwise reorders against the surrounding RTL run, so
+/// `نظام الملفات /boot/efi ممتلئ` rendered with the path scrambled. Isolating
+/// each value fixes every surface at once (GUI, terminal, HTML, Markdown),
+/// because they all render through this one function.
 fn render_template(template: &str, args: &[String]) -> String {
     let mut out = template.to_string();
     for (i, arg) in args.iter().enumerate() {
-        out = out.replace(&format!("{{{i}}}"), arg);
+        out = out.replace(&format!("{{{i}}}"), &sysmedic_core::lang::isolate(arg));
     }
     out
 }
@@ -156,6 +164,42 @@ mod tests {
         // Unknown ids fall back rather than disappearing.
         let unknown = Finding::new("x.y", Category::Cpu, Severity::Low, "T", "S");
         assert_eq!(localized_title(&unknown, Lang::Ar), "T");
+    }
+
+    #[test]
+    fn interpolated_values_are_bidi_isolated_in_arabic() {
+        use sysmedic_core::{Category, Finding, Severity};
+        // A mount point is a run of neutral and Latin characters; dropped raw
+        // into an RTL sentence the bidi algorithm reorders it on screen.
+        let f = Finding::new(
+            "storage.disk_nearly_full",
+            Category::Storage,
+            Severity::Medium,
+            "Filesystem /boot/efi is 88% full",
+            "Only 0.1 GiB free of 0.5 GiB on /boot/efi.",
+        )
+        .with_args(vec![
+            "/boot/efi".into(),
+            "88".into(),
+            "0.1".into(),
+            "0.5".into(),
+        ]);
+        let ar = localized_title(&f, Lang::Ar);
+        assert!(
+            ar.contains("\u{2068}/boot/efi\u{2069}"),
+            "path is not isolated: {ar}"
+        );
+        // Every value gets isolated, not just the first.
+        assert_eq!(
+            ar.matches('\u{2068}').count(),
+            ar.matches('\u{2069}').count()
+        );
+
+        // English is authored in the rules and must stay byte-for-byte clean —
+        // JSON consumers and the machine-readable title must not grow
+        // invisible formatting characters.
+        let en = localized_title(&f, Lang::En);
+        assert!(!en.contains('\u{2068}') && !en.contains('\u{2069}'));
     }
 
     #[test]

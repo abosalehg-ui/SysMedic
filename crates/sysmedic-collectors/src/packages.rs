@@ -95,8 +95,64 @@ fn collect_apt() -> PackageInfo {
         let (total, security) = parse_upgradable(&upgradable);
         info.upgradable = Some(total);
         info.security_upgrades = Some(security);
+        // Those two counts are only as current as the package index they were
+        // computed from, so record its age alongside them.
+        info.index_age_days = index_age_days(APT_INDEX_STAMPS);
+    }
+
+    // What `autoremove --purge` would actually delete. Simulated (`-s` needs
+    // no privileges) so the fix preview can name the packages instead of
+    // implying only old kernels are affected.
+    if let Some(sim) = util::run_captured("apt-get", &["-s", "autoremove", "--purge"]) {
+        info.autoremovable = parse_autoremovable(&sim.stdout);
     }
     info
+}
+
+/// Files apt updates when the package index is refreshed, newest wins.
+///
+/// `update-success-stamp` is written by Debian/Ubuntu's periodic updater and
+/// is the most direct signal; `/var/lib/apt/lists` is touched by any
+/// `apt update`, including a manual one, so it covers systems where the timer
+/// is off. `/var/lib/apt/periodic/update-stamp` records an attempt (successful
+/// or not) and is the last resort.
+const APT_INDEX_STAMPS: &[&str] = &[
+    "/var/lib/apt/periodic/update-success-stamp",
+    "/var/lib/apt/lists",
+    "/var/lib/apt/periodic/update-stamp",
+];
+
+/// dnf's metadata cache; `--cacheonly` reads exactly this.
+const DNF_INDEX_STAMPS: &[&str] = &["/var/cache/dnf", "/var/cache/libdnf5"];
+
+/// pacman's synced databases, refreshed by `pacman -Sy`.
+const PACMAN_INDEX_STAMPS: &[&str] = &["/var/lib/pacman/sync"];
+
+/// How many days ago the newest of `stamps` was modified, or `None` when none
+/// is readable (so the rule stays quiet rather than guessing).
+fn index_age_days(stamps: &[&str]) -> Option<u64> {
+    let newest = stamps
+        .iter()
+        .filter_map(|p| std::fs::metadata(p).ok()?.modified().ok())
+        .max()?;
+    let elapsed = std::time::SystemTime::now().duration_since(newest).ok()?;
+    Some(elapsed.as_secs() / 86_400)
+}
+
+/// Package names from `apt-get -s autoremove --purge`.
+///
+/// The simulation prints one `Remv <name> [version]` line per package it
+/// would delete (`Purg` when configuration files go too).
+pub fn parse_autoremovable(s: &str) -> Vec<String> {
+    s.lines()
+        .filter_map(|line| {
+            let mut tokens = line.split_whitespace();
+            match tokens.next()? {
+                "Remv" | "Purg" => tokens.next().map(String::from),
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 fn collect_dnf() -> PackageInfo {
@@ -123,6 +179,9 @@ fn collect_dnf() -> PackageInfo {
     ) {
         info.security_upgrades = Some(parse_dnf_security(&out.stdout));
     }
+    // `--cacheonly` deliberately keeps the checkup off the network, which
+    // makes the age of that cache part of the answer.
+    info.index_age_days = index_age_days(DNF_INDEX_STAMPS);
     info
 }
 
@@ -147,6 +206,9 @@ fn collect_pacman() -> PackageInfo {
     // pacman never prunes its cache by itself: every version of every package
     // ever installed stays in /var/cache/pacman/pkg until cleaned.
     info.pacman_cache_bytes = Some(util::dir_size("/var/cache/pacman/pkg", 1));
+    // `pacman -Qu` compares against the last synced database, so the same
+    // staleness caveat applies as on apt.
+    info.index_age_days = index_age_days(PACMAN_INDEX_STAMPS);
     info
 }
 
@@ -281,6 +343,36 @@ mod tests {
     #[test]
     fn audit_of_healthy_system_is_empty() {
         assert!(parse_dpkg_audit("").is_empty());
+    }
+
+    #[test]
+    fn autoremove_simulation_lists_every_package_not_just_kernels() {
+        // The point of collecting this: `autoremove --purge` removes far more
+        // than the old kernels the fix title used to name.
+        let sim = "\
+NOTE: This is only a simulation!
+Reading package lists...
+Building dependency tree...
+The following packages will be REMOVED:
+  libpython3.11-minimal* linux-image-6.8.0-45-generic* nodejs-doc*
+Remv libpython3.11-minimal [3.11.9-1]
+Purg linux-image-6.8.0-45-generic [6.8.0-45.45]
+Remv nodejs-doc [18.19.0]
+";
+        assert_eq!(
+            parse_autoremovable(sim),
+            vec![
+                "libpython3.11-minimal",
+                "linux-image-6.8.0-45-generic",
+                "nodejs-doc"
+            ]
+        );
+    }
+
+    #[test]
+    fn autoremove_simulation_with_nothing_to_do_is_empty() {
+        let sim = "Reading package lists...\n0 upgraded, 0 newly installed, 0 to remove.\n";
+        assert!(parse_autoremovable(sim).is_empty());
     }
 
     #[test]

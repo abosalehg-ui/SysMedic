@@ -3,7 +3,10 @@
 
 use std::fmt::Write as _;
 use std::path::Path;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
+use sysmedic_core::paths::SAFE_PATH;
 use sysmedic_core::HealthReport;
 use sysmedic_knowledge::{explain, Lang};
 
@@ -27,11 +30,68 @@ const PDF_TOOLS: &[(&str, &[&str])] = &[
     ("wkhtmltopdf", &["{in}", "{out}"]),
 ];
 
+/// How long a PDF conversion may take before the converter is killed.
+///
+/// Every other external command SysMedic runs is bounded (the collectors kill
+/// a hung tool after ten seconds); this one was not, so a headless browser
+/// that never exited — a stale profile lock, a crashed GPU process — hung
+/// `sysmedic checkup --format pdf` indefinitely with no output and no way out
+/// but Ctrl-C. Rendering one page of HTML is fast; a minute is generous.
+const PDF_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Run `tool` with `args`, killing it if it outruns [`PDF_TIMEOUT`].
+///
+/// Uses the same sanitized `PATH` as every other command in the codebase.
+/// This was the one place that inherited the ambient `PATH`, which contradicts
+/// the policy documented on [`sysmedic_core::paths::SAFE_PATH`] — a poisoned
+/// `PATH` chose which binary rendered the report.
+fn run_bounded(tool: &str, args: &[String]) -> bool {
+    let Ok(mut child) = Command::new(tool)
+        .args(args)
+        .env("PATH", SAFE_PATH)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) => {
+                if start.elapsed() >= PDF_TIMEOUT {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => return false,
+        }
+    }
+}
+
+/// Make `path` absolute, so it can never be mistaken for an option.
+///
+/// `wkhtmltopdf` takes the output as a positional argument, so a relative path
+/// the user chose that happens to start with `-` would be parsed as a flag.
+fn absolute(path: &Path) -> std::path::PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(path))
+        .unwrap_or_else(|_| Path::new("./").join(path))
+}
+
 /// Write a PDF of `report` to `out_path` by rendering HTML and converting it
 /// with whatever headless browser / wkhtmltopdf is installed. Returns an error
 /// (naming the options) when none is available, so the caller can fall back to
 /// HTML.
 pub fn write_pdf(report: &HealthReport, lang: Lang, out_path: &Path) -> Result<(), String> {
+    let out_path = &absolute(out_path);
     let html = to_html(report, lang);
     // A private, uniquely-named temp file (O_EXCL, mode 0600) that auto-deletes
     // when dropped at the end of this function. This avoids the fixed,
@@ -60,12 +120,7 @@ pub fn write_pdf(report: &HealthReport, lang: Lang, out_path: &Path) -> Result<(
             .iter()
             .map(|a| a.replace("{out}", &out_s).replace("{in}", &tmp_s))
             .collect();
-        let ok = std::process::Command::new(tool)
-            .args(&args)
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if ok && out_path.exists() {
+        if run_bounded(tool, &args) && out_path.exists() {
             return Ok(());
         }
     }
@@ -74,13 +129,30 @@ pub fn write_pdf(report: &HealthReport, lang: Lang, out_path: &Path) -> Result<(
         .to_string())
 }
 
+/// Whether `program` exists on [`SAFE_PATH`].
+///
+/// Looks the file up rather than running `program --version`: probing three
+/// candidates meant launching up to three browsers just to discover which was
+/// installed, and a browser's `--version` is not free.
 fn which(program: &str) -> Option<()> {
-    std::process::Command::new(program)
-        .arg("--version")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
+    SAFE_PATH
+        .split(':')
+        .map(|dir| Path::new(dir).join(program))
+        .find(|candidate| is_executable(candidate))
         .map(|_| ())
+}
+
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::metadata(path)
+        .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    path.is_file()
 }
 
 pub fn to_markdown(report: &HealthReport, lang: Lang) -> String {
@@ -100,10 +172,26 @@ pub fn to_markdown(report: &HealthReport, lang: Lang) -> String {
         report.score,
         sysmedic_core::score::grade_label_in(report.score, lang)
     );
+    let _ = writeln!(
+        out,
+        "*{}: {} — {}*\n",
+        sysmedic_core::score::coverage_label_in(lang),
+        report.coverage.label(),
+        l.coverage_note
+    );
     let _ = writeln!(out, "| {} | |", l.categories);
     let _ = writeln!(out, "|---|---|");
     for cs in &report.category_scores {
-        let _ = writeln!(out, "| {} | {} |", cs.category.label_in(lang), cs.score);
+        let _ = writeln!(
+            out,
+            "| {} | {} |",
+            cs.category.label_in(lang),
+            if cs.measured {
+                cs.score.to_string()
+            } else {
+                l.not_measured.to_string()
+            }
+        );
     }
     let _ = writeln!(out, "\n## {} ({})\n", l.findings, report.findings.len());
     if report.findings.is_empty() {
@@ -196,6 +284,16 @@ pub fn to_html(report: &HealthReport, lang: Lang) -> String {
         .category_scores
         .iter()
         .map(|cs| {
+            // An unmeasured category has no findings and would otherwise show
+            // a full bar — a clean bill of health for something nobody looked
+            // at. Render it as an explicit dash instead.
+            if !cs.measured {
+                return format!(
+                    "<div class=\"cat unmeasured\"><span>{}</span><div class=\"bar\"></div><b>{}</b></div>",
+                    esc(cs.category.label_in(lang)),
+                    esc(l.not_measured)
+                );
+            }
             format!(
                 "<div class=\"cat\"><span>{}</span><div class=\"bar\"><div style=\"width:{}%\"></div></div><b>{}</b></div>",
                 esc(cs.category.label_in(lang)),
@@ -216,6 +314,8 @@ pub fn to_html(report: &HealthReport, lang: Lang) -> String {
 body {{ max-width: 860px; margin: 2rem auto; padding: 0 1rem; }}
 .score {{ font-size: 3rem; font-weight: 700; }}
 .cat {{ display: grid; grid-template-columns: 8rem 1fr 3rem; gap: .5rem; align-items: center; margin: .2rem 0; }}
+.cat.unmeasured {{ opacity: .55; }}
+.coverage {{ margin-top: -.4rem; opacity: .75; font-size: .9rem; }}
 .bar {{ background: rgba(128,128,128,.25); border-radius: 6px; height: 10px; }}
 .bar div {{ background: #26a269; border-radius: 6px; height: 10px; }}
 @media (prefers-reduced-motion: reduce) {{ * {{ animation: none !important; transition: none !important; }} }}
@@ -245,6 +345,7 @@ pre {{
 <h1>{report_title}</h1>
 <p><i>{generated_label}: {generated}</i></p>
 <div class="score">{score}/100 <small>({grade})</small></div>
+<p class="coverage">{coverage_label}: {coverage} — {coverage_note}</p>
 <h2>{categories_label}</h2>{categories}
 <h2>{findings_label} ({count})</h2>{findings}
 </body></html>"#,
@@ -255,6 +356,9 @@ pre {{
         findings_label = esc(l.findings),
         score = report.score,
         grade = sysmedic_core::score::grade_label_in(report.score, lang),
+        coverage_label = esc(sysmedic_core::score::coverage_label_in(lang)),
+        coverage = esc(&report.coverage.label()),
+        coverage_note = esc(l.coverage_note),
         count = report.findings.len(),
         findings = findings_html,
     )
@@ -307,6 +411,10 @@ struct Labels {
     if_ignored: &'static str,
     evidence: &'static str,
     suggested: &'static str,
+    /// Why the coverage figure is shown next to the score.
+    coverage_note: &'static str,
+    /// Stands in for the score of a category that was never measured.
+    not_measured: &'static str,
 }
 
 fn labels(lang: Lang) -> Labels {
@@ -325,6 +433,8 @@ fn labels(lang: Lang) -> Labels {
             if_ignored: "إذا أُهمل",
             evidence: "الدليل",
             suggested: "أمر مقترح",
+            coverage_note: "الفئات التي أمكن قياسها فعلاً؛ الدرجة محسوبة منها وحدها",
+            not_measured: "غير مقيس",
         },
         Lang::En => Labels {
             report_title: "SysMedic Health Report",
@@ -340,6 +450,8 @@ fn labels(lang: Lang) -> Labels {
             if_ignored: "If ignored",
             evidence: "Evidence",
             suggested: "Suggested command",
+            coverage_note: "categories actually measured; the score is computed from those only",
+            not_measured: "not measured",
         },
     }
 }
@@ -413,6 +525,48 @@ mod tests {
         let md = to_markdown(&report(), Lang::Ar);
         assert!(md.contains("درجة الصحّة"));
         assert!(md.contains("## النتائج"));
+    }
+
+    #[test]
+    fn reports_state_their_coverage_and_flag_unmeasured_categories() {
+        // The fixture snapshot is empty, so nothing was measured — the report
+        // must say so rather than showing twelve full bars.
+        let report = report();
+        let html = to_html(&report, Lang::En);
+        assert!(html.contains("Coverage: 0/12"), "no coverage line in HTML");
+        assert!(html.contains("not measured"));
+        assert!(html.contains("cat unmeasured"));
+
+        let md = to_markdown(&report, Lang::En);
+        assert!(
+            md.contains("Coverage: 0/12"),
+            "no coverage line in Markdown"
+        );
+        assert!(md.contains("not measured"));
+
+        // Arabic gets the same information, localized.
+        let ar = to_html(&report, Lang::Ar);
+        assert!(ar.contains("التغطية: 0/12"));
+        assert!(ar.contains("غير مقيس"));
+    }
+
+    #[test]
+    fn which_finds_a_real_binary_without_running_it() {
+        // `sh` exists on every Unix in /bin or /usr/bin; a made-up name does
+        // not. The point is that neither case spawns a process.
+        assert!(which("sh").is_some());
+        assert!(which("sysmedic-not-a-real-tool").is_none());
+    }
+
+    #[test]
+    fn absolute_makes_a_dash_leading_path_unambiguous() {
+        // A relative output path starting with `-` would be read as an option
+        // by a converter that takes it positionally.
+        let resolved = absolute(Path::new("-o.pdf"));
+        assert!(resolved.is_absolute(), "got {}", resolved.display());
+        assert!(resolved.ends_with("-o.pdf"));
+        // An already-absolute path is left alone.
+        assert_eq!(absolute(Path::new("/tmp/r.pdf")), Path::new("/tmp/r.pdf"));
     }
 
     #[test]

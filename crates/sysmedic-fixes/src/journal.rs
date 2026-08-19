@@ -52,6 +52,12 @@ pub struct JournalEntry {
     pub applied_at: String,
     pub reversible: bool,
     pub undo: Vec<FixCommand>,
+    /// The setting the fix overwrote, so `undo` can put the user's own value
+    /// back rather than a hardcoded default. Validated by the fix before use —
+    /// this file is on disk and `undo` runs as root. `None` for fixes that
+    /// replace no setting, and for entries written by older versions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restore: Option<String>,
     /// Set once the entry has been undone, so it is not undone twice.
     #[serde(default)]
     pub undone: bool,
@@ -201,6 +207,7 @@ mod tests {
             } else {
                 vec![]
             },
+            restore: None,
             undone: false,
             state: EntryState::Applied,
         }

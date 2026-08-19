@@ -1146,6 +1146,7 @@ dependencies = [
  "anyhow",
  "clap",
  "owo-colors",
+ "serde_json",
  "sysmedic-collectors",
  "sysmedic-core",
  "sysmedic-diagnostics",

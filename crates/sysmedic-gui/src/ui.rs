@@ -10,7 +10,6 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 use sysmedic_core::fix::FixPlan;
 use sysmedic_core::HealthReport;
-use sysmedic_fixes::helper_path;
 use sysmedic_knowledge::Lang;
 
 use crate::viewmodel::{self, Strings};
@@ -29,6 +28,23 @@ pub fn animations_enabled() -> bool {
     gtk::Settings::default()
         .map(|s| s.is_gtk_enable_animations())
         .unwrap_or(true)
+}
+
+/// Pin the widget direction to match the language SysMedic chose.
+///
+/// The app picks its strings from the environment itself, while GTK derives
+/// layout direction from its own translation of `default:LTR` — two
+/// independent decisions. When GTK's locale data is missing (a slim container,
+/// a Flatpak without the locale extension, `LANGUAGE` set differently from
+/// `LC_ALL`) the two disagree and the result is Arabic text in a left-to-right
+/// layout: mirrored margins, the wrong side for every icon and switch. Setting
+/// the direction from the same value that chose the strings keeps them in step.
+pub fn apply_text_direction(lang: Lang) {
+    let direction = match lang {
+        Lang::Ar => gtk::TextDirection::Rtl,
+        Lang::En => gtk::TextDirection::Ltr,
+    };
+    gtk::Widget::set_default_direction(direction);
 }
 
 pub fn load_css() {
@@ -58,7 +74,8 @@ fn run_engine() -> HealthReport {
 }
 
 pub fn build_window(app: &adw::Application) {
-    let lang = Lang::from_locale(&std::env::var("LANG").unwrap_or_default());
+    let lang = Lang::from_env();
+    apply_text_direction(lang);
     let strings = Strings::for_lang(lang);
 
     let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
@@ -419,7 +436,12 @@ fn confirm_and_apply(
         running.set_timeout(0); // stays until dismissed below
         toasts.add_toast(running.clone());
         glib::spawn_future_local(async move {
-            let helper = helper_path();
+            // The helper chosen here selects the polkit action, so an
+            // irreversible purge and a firewall toggle no longer share one
+            // generic authorization prompt.
+            let helper = sysmedic_fixes::helper_for_fix(&fix_id).unwrap_or_else(|| {
+                sysmedic_fixes::helper_path_for(sysmedic_fixes::FixTier::Destructive)
+            });
             let id = fix_id.clone();
             // pkexec prompts polkit; the helper does the privileged work.
             let succeeded = gtk::gio::spawn_blocking(move || {
@@ -483,6 +505,22 @@ fn report_view(
         root.append(w);
     }
 
+    // What the score is actually based on. Without this, a machine where four
+    // collectors found nothing to talk to showed the same confident number as
+    // one that was examined end to end.
+    if report.coverage.is_partial() {
+        let coverage = gtk::Label::new(Some(&format!(
+            "{}: {} — {}",
+            sysmedic_core::score::coverage_label_in(lang),
+            report.coverage.label(),
+            strings.coverage_note
+        )));
+        coverage.add_css_class("dim-label");
+        coverage.add_css_class("caption");
+        coverage.set_wrap(true);
+        root.append(&coverage);
+    }
+
     // History trend strip (populated by past checkups).
     let entries = sysmedic_history::default_path()
         .map(sysmedic_history::load)
@@ -504,6 +542,16 @@ fn report_view(
     let categories = boxed_list();
     for row in viewmodel::category_rows(report, lang) {
         let action_row = adw::ActionRow::builder().title(row.label).build();
+        if !row.measured {
+            // No data: say so rather than drawing a full bar, which reads as a
+            // clean bill of health for something nobody looked at.
+            let value = gtk::Label::new(Some(strings.not_measured));
+            value.add_css_class("dim-label");
+            action_row.add_suffix(&value);
+            action_row.add_css_class("dim-label");
+            categories.append(&action_row);
+            continue;
+        }
         let bar = gtk::LevelBar::for_interval(0.0, 100.0);
         // Offsets give low scores a color signal — without them 76 and 100
         // render identically.
@@ -538,7 +586,10 @@ fn report_view(
                 &sysmedic_knowledge::localized_summary(finding, lang),
             ))
             .build();
-        let badge = gtk::Label::new(Some(&finding.severity.label().to_uppercase()));
+        // The user-facing label, not the machine one — an Arabic dashboard
+        // used to show `CRITICAL` above an Arabic title. `Severity::label()`
+        // still supplies the CSS class below.
+        let badge = gtk::Label::new(Some(&finding.severity.label_in(lang).to_uppercase()));
         badge.add_css_class("badge");
         badge.add_css_class("caption-heading");
         badge.add_css_class(viewmodel::severity_css(finding.severity));

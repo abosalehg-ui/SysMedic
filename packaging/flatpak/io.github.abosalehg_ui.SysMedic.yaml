@@ -49,6 +49,8 @@ modules:
       - install -Dm755 target/release/sysmedic /app/bin/sysmedic
       - install -Dm755 target/release/sysmedic-gui /app/bin/sysmedic-gui
       - install -Dm755 target/release/sysmedic-fix-helper /app/libexec/sysmedic-fix-helper
+      - install -Dm755 target/release/sysmedic-fix-helper-destructive
+        /app/libexec/sysmedic-fix-helper-destructive
       - install -Dm644 data/io.github.abosalehg_ui.SysMedic.desktop
         /app/share/applications/io.github.abosalehg_ui.SysMedic.desktop
       - install -Dm644 data/io.github.abosalehg_ui.SysMedic.metainfo.xml

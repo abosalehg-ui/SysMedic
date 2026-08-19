@@ -24,6 +24,8 @@ rm -rf "$APPDIR"
 install -Dm755 target/release/sysmedic-gui "$APPDIR/usr/bin/sysmedic-gui"
 install -Dm755 target/release/sysmedic     "$APPDIR/usr/bin/sysmedic"
 install -Dm755 target/release/sysmedic-fix-helper "$APPDIR/usr/libexec/sysmedic-fix-helper"
+install -Dm755 target/release/sysmedic-fix-helper-destructive \
+  "$APPDIR/usr/libexec/sysmedic-fix-helper-destructive"
 
 install -Dm644 data/io.github.abosalehg_ui.SysMedic.desktop \
   "$APPDIR/usr/share/applications/io.github.abosalehg_ui.SysMedic.desktop"
