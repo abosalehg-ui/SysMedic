@@ -41,7 +41,7 @@ jobs:
       # Coverage is reported, not gated: a threshold invites tests written to
       # move the number. The summary makes a drop visible in review instead.
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@daa3c1f1f9a9d46f686d9fc2f65773d0c293688b # v2.62.44
+        uses: taiki-e/install-action@5b4d68e2e660441203ab128a23676f1e4faf1532 # v2.62.44
         with:
           tool: cargo-llvm-cov
       - name: Coverage summary
