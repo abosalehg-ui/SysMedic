@@ -3,6 +3,7 @@ name = "sysmedic-core"
 description = "Domain model, checkup engine and health scoring for SysMedic"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 

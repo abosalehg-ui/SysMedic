@@ -7,7 +7,10 @@ use anyhow::Result;
 use owo_colors::{OwoColorize, Stream};
 use sysmedic_core::alert::Alert;
 use sysmedic_core::finding::Severity;
-use sysmedic_core::{HealthReport, Snapshot};
+use sysmedic_core::score::grade_label_in;
+use sysmedic_core::{HealthReport, Lang, Snapshot};
+
+use crate::text::tools;
 use sysmedic_diskscan::human_size as human;
 use sysmedic_history::HistoryEntry;
 
@@ -16,9 +19,10 @@ fn collect() -> Snapshot {
 }
 
 /// `sysmedic disk [path]`: scan a directory and show the largest subtrees.
-pub fn disk(path: Option<String>, depth: u32, top: usize) -> Result<()> {
+pub fn disk(path: Option<String>, depth: u32, top: usize, lang: Lang) -> Result<()> {
+    let t = tools(lang);
     let root = path.unwrap_or_else(|| ".".to_string());
-    eprintln!("Scanning {root}…");
+    eprintln!("{} {root}…", t.scanning);
     let tree = sysmedic_diskscan::scan(&root, depth.max(1));
     println!(
         "\n  {}  {}\n",
@@ -27,7 +31,7 @@ pub fn disk(path: Option<String>, depth: u32, top: usize) -> Result<()> {
     );
     let children = sysmedic_diskscan::largest_children(&tree, top);
     if children.is_empty() {
-        println!("  (empty or unreadable)");
+        println!("  {}", t.empty_or_unreadable);
         return Ok(());
     }
     let max = children.first().map(|c| c.size).unwrap_or(1).max(1);
@@ -48,69 +52,76 @@ pub fn disk(path: Option<String>, depth: u32, top: usize) -> Result<()> {
 }
 
 /// `sysmedic network`: default route, DNS, listening ports and latency.
-pub fn network() -> Result<()> {
+pub fn network(lang: Lang) -> Result<()> {
+    let t = tools(lang);
     let snapshot = collect();
 
     println!(
         "{}",
-        "Network".if_supports_color(Stream::Stdout, |t| t.bold())
+        t.network.if_supports_color(Stream::Stdout, |t| t.bold())
     );
     match &snapshot.network {
         Some(net) => {
             let route = if net.has_default_route {
-                "yes"
+                t.yes
                     .if_supports_color(Stream::Stdout, |t| t.green())
                     .to_string()
             } else {
-                "no".if_supports_color(Stream::Stdout, |t| t.red())
+                t.no.if_supports_color(Stream::Stdout, |t| t.red())
                     .to_string()
             };
-            println!("  Default route:  {route}");
+            println!("  {:<16} {route}", t.default_route);
             let dns = if net.dns_servers.is_empty() {
-                "(none)"
+                t.none
                     .if_supports_color(Stream::Stdout, |t| t.red())
                     .to_string()
             } else {
                 net.dns_servers.join(", ")
             };
-            println!("  DNS servers:    {dns}");
+            println!("  {:<16} {dns}", t.dns_servers);
         }
         None => println!(
             "  {}",
-            "network info unavailable".if_supports_color(Stream::Stdout, |t| t.dimmed())
+            t.network_unavailable
+                .if_supports_color(Stream::Stdout, |t| t.dimmed())
         ),
     }
 
     match latency("1.1.1.1") {
-        Some(ms) => println!("  Latency:        {ms:.1} ms (1.1.1.1)"),
+        Some(ms) => println!("  {:<16} {ms:.1} ms (1.1.1.1)", t.latency),
         None => println!(
-            "  Latency:        {}",
-            "unavailable (no ping)".if_supports_color(Stream::Stdout, |t| t.dimmed())
+            "  {:<16} {}",
+            t.latency,
+            t.latency_unavailable
+                .if_supports_color(Stream::Stdout, |t| t.dimmed())
         ),
     }
 
     println!(
         "\n{}",
-        "Listening ports".if_supports_color(Stream::Stdout, |t| t.bold())
+        t.listening_ports
+            .if_supports_color(Stream::Stdout, |t| t.bold())
     );
     match &snapshot.ports {
         Some(ports) if !ports.is_empty() => {
             for p in ports {
                 let scope = if p.exposed {
-                    "network"
+                    t.scope_network
                         .if_supports_color(Stream::Stdout, |t| t.yellow())
                         .to_string()
                 } else {
-                    "localhost"
+                    t.scope_localhost
                         .if_supports_color(Stream::Stdout, |t| t.green())
                         .to_string()
                 };
                 println!("  {:>5}/{:<5} {:<18} [{scope}]", p.port, p.proto, p.address);
             }
         }
+        // Not "TCP ports": UDP has been audited since the sweep was widened.
         _ => println!(
             "  {}",
-            "no listening TCP ports found".if_supports_color(Stream::Stdout, |t| t.dimmed())
+            t.no_listening_ports
+                .if_supports_color(Stream::Stdout, |t| t.dimmed())
         ),
     }
     Ok(())
@@ -122,8 +133,8 @@ fn full_report() -> HealthReport {
 
 /// `sysmedic monitor`: run a checkup, record it in history, and fire a desktop
 /// notification for each active alert. This is what the scheduled timer runs.
-pub fn monitor(quiet: bool) -> Result<()> {
-    let lang = sysmedic_core::Lang::from_env();
+pub fn monitor(quiet: bool, lang: Lang) -> Result<()> {
+    let t = tools(lang);
     let report = full_report();
 
     // Record history (best-effort — a monitor run should not fail on I/O).
@@ -144,10 +155,12 @@ pub fn monitor(quiet: bool) -> Result<()> {
 
     if !quiet {
         println!(
-            "Health score: {}/100 ({}). {} alert(s).",
+            "{} {}/100 ({}). {} {}",
+            t.health_score,
             report.score,
-            report.grade,
-            alerts.len()
+            grade_label_in(report.score, lang),
+            alerts.len(),
+            t.alerts
         );
         for a in &alerts {
             println!(
@@ -181,19 +194,21 @@ fn notify(alert: &Alert) {
 }
 
 /// `sysmedic history`: show the recorded health-score trend.
-pub fn history() -> Result<()> {
+pub fn history(lang: Lang) -> Result<()> {
+    let t = tools(lang);
     let Some(path) = sysmedic_history::default_path() else {
-        println!("No history location available (neither HOME nor XDG_STATE_HOME is set).");
+        println!("{}", t.no_history_location);
         return Ok(());
     };
     let entries = sysmedic_history::load(path);
     if entries.is_empty() {
-        println!("No history yet. Run `sysmedic monitor` or enable `sysmedic schedule daily`.");
+        println!("{}", t.no_history_yet);
         return Ok(());
     }
     println!(
         "{}",
-        "Health-score history".if_supports_color(Stream::Stdout, |t| t.bold())
+        t.history_title
+            .if_supports_color(Stream::Stdout, |t| t.bold())
     );
     println!(
         "  {}",
@@ -208,13 +223,19 @@ pub fn history() -> Result<()> {
             text.if_supports_color(Stream::Stdout, |t| t.red())
                 .to_string()
         };
-        println!("  Trend since first record: {colored}");
+        println!("  {} {colored}", t.trend_since_first);
     }
     println!();
     for e in entries.iter().rev().take(10) {
         println!(
-            "  {}  {:>3}/100  {:<10} {} finding(s)",
-            e.at, e.score, e.grade, e.findings
+            "  {}  {:>3}/100  {:<10} {} {}",
+            e.at,
+            e.score,
+            // The stored grade is the English identifier; display layers
+            // localize from the score, as the report and dashboard do.
+            grade_label_in(e.score, lang),
+            e.findings,
+            t.findings_count
         );
     }
     Ok(())

@@ -7,8 +7,8 @@
 //! on top from M6 onwards.
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
-use once_cell::sync::Lazy;
 use serde::Deserialize;
 
 pub mod llm;
@@ -42,7 +42,7 @@ struct Entry {
     ar: Explanation,
 }
 
-static KNOWLEDGE: Lazy<HashMap<String, (Explanation, Explanation)>> = Lazy::new(|| {
+static KNOWLEDGE: LazyLock<HashMap<String, (Explanation, Explanation)>> = LazyLock::new(|| {
     let raw = include_str!("../data/knowledge.yaml");
     let entries: Vec<Entry> =
         serde_yaml_ng::from_str(raw).expect("embedded knowledge.yaml must be valid");

@@ -5,6 +5,10 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
+# Declared rather than discovered: the code uses `u64::is_multiple_of` (1.87)
+# and `std::sync::LazyLock` (1.80), so an older toolchain failed somewhere deep
+# in a build instead of saying so up front. CI checks this exact version.
+rust-version = "1.87"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/abosalehg-ui/SysMedic"
 homepage = "https://github.com/abosalehg-ui/SysMedic"
@@ -32,7 +36,6 @@ thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 owo-colors = { version = "4", features = ["supports-colors"] }
 humantime = "2"
-once_cell = "1"
 ureq = { version = "2", default-features = false, features = ["tls"] }
 
 [profile.release]

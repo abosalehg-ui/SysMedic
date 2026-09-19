@@ -197,6 +197,17 @@ pub fn helper_for_fix(fix_id: &str) -> Option<String> {
     Some(helper_path_for(tier_of(fix_id)?))
 }
 
+/// The collector names the privileged helper must run to rebuild `fix_id`'s
+/// plan, or `None` for an unknown id.
+///
+/// The helper used to collect *everything* as root — `smartctl` against every
+/// block device, apt/dpkg/snap/flatpak parsers, a walk of `/var/log` — to
+/// apply a fix that reads one section of the snapshot. Least privilege says
+/// run, as root, only what the fix actually needs.
+pub fn collectors_for(fix_id: &str) -> Option<&'static [&'static str]> {
+    Some(fixes::find(fix_id)?.needs_collectors())
+}
+
 /// The helper that handles `undo`.
 ///
 /// Only a `reversible` entry is ever undoable, and a reversible low-risk fix
@@ -208,7 +219,7 @@ pub fn undo_helper() -> String {
     helper_path_for(FixTier::Routine)
 }
 
-/// Where the CLI should read/write the journal: the system path when running
+/// Where this process may **write** the journal: the system path when running
 /// as root, otherwise a per-user state file.
 ///
 /// Returns `None` when neither `XDG_STATE_HOME` nor `HOME` is set. The old
@@ -219,7 +230,33 @@ pub fn journal_path() -> Option<PathBuf> {
     if is_root() {
         return Some(PathBuf::from(SYSTEM_JOURNAL));
     }
+    user_journal_path()
+}
+
+/// The per-user journal, for an unprivileged install with no helper.
+fn user_journal_path() -> Option<PathBuf> {
     sysmedic_core::paths::state_dir().map(|base| base.join("sysmedic/journal.json"))
+}
+
+/// Where to **read** the journal from — always the system journal when it
+/// exists, whoever is asking.
+///
+/// Every fix applied through pkexec is recorded in [`SYSTEM_JOURNAL`], because
+/// the helper that applied it was root. Reading through [`journal_path`]
+/// instead sent an unprivileged `sysmedic undo` to the per-user file that no
+/// privileged apply ever writes, so the preview answered "Nothing to undo"
+/// while a reversible fix sat in the system journal one directory away — and
+/// `sysmedic undo --yes`, which delegates to the helper, then undid it. The
+/// preview contradicted the action it was previewing.
+///
+/// This is only possible because the journal is world-readable: it needs
+/// *integrity*, not secrecy (see [`journal::Journal::save`]).
+pub fn journal_read_path() -> Option<PathBuf> {
+    let system = PathBuf::from(SYSTEM_JOURNAL);
+    if system.exists() {
+        return Some(system);
+    }
+    user_journal_path()
 }
 
 pub fn is_root() -> bool {
@@ -236,6 +273,7 @@ mod tests {
         Snapshot {
             security: Some(SecurityInfo {
                 firewall_active: Some(false),
+                firewall_frontend: Some(sysmedic_core::snapshot::FirewallFrontend::Ufw),
                 ssh_permit_root_login: None,
                 ssh_password_auth: None,
             }),

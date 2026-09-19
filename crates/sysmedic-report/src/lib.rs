@@ -198,10 +198,14 @@ pub fn to_markdown(report: &HealthReport, lang: Lang) -> String {
         let _ = writeln!(out, "{}", l.healthy);
     }
     for f in &report.findings {
+        // The user-facing label, not the machine one. `to_html` has used
+        // `label_in` since severity badges were localized; Markdown was
+        // missed, so an Arabic report pasted into an issue carried
+        // `[CRITICAL]` above an Arabic title.
         let _ = writeln!(
             out,
             "### [{}] {}\n",
-            f.severity.label().to_uppercase(),
+            f.severity.label_in(lang).to_uppercase(),
             md_inline(&sysmedic_knowledge::localized_title(f, lang))
         );
         let _ = writeln!(
@@ -525,6 +529,13 @@ mod tests {
         let md = to_markdown(&report(), Lang::Ar);
         assert!(md.contains("درجة الصحّة"));
         assert!(md.contains("## النتائج"));
+        // Including the severity badge: an Arabic report must not carry
+        // `[CRITICAL]` above an Arabic finding title.
+        assert!(
+            md.contains("[حرجة]"),
+            "severity badge is not localized: {md}"
+        );
+        assert!(!md.contains("[CRITICAL]"));
     }
 
     #[test]

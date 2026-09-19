@@ -61,7 +61,7 @@ API key — it is strictly opt-in:
 export ANTHROPIC_API_KEY=sk-ant-...
 sysmedic explain storage.disk_nearly_full --deep
 # optionally pick a model:
-export SYSMEDIC_LLM_MODEL=claude-opus-4-8
+export SYSMEDIC_LLM_MODEL=claude-sonnet-5
 ```
 
 Without the key, `--deep` prints the offline answer and a hint. Only the finding

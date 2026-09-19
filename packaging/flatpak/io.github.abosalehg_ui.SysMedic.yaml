@@ -26,13 +26,19 @@ finish-args:
   # A system doctor needs to read the host to diagnose it (read-only where possible).
   - --filesystem=host:ro
   - --filesystem=/var/log:ro
-  # Deep explanations are opt-in and reach the Claude API only when a key is set.
-  - --share=network
+  # No network. The checkup, the explanations and the reports are all offline;
+  # the only thing that would use a socket is `explain --deep`, which is opt-in
+  # and needs an API key the sandbox does not have either. A permission granted
+  # "in case" is a permission nobody reviews. Users who want deep explanations
+  # can grant it themselves, per-install:
+  #   flatpak override --user --share=network io.github.abosalehg_ui.SysMedic
+  - --unshare=network
   # Talk to systemd (services, boot, scheduled timers) and notifications.
   - --system-talk-name=org.freedesktop.systemd1
   - --talk-name=org.freedesktop.Notifications
-  # Privileged fixes are authorized through the host's polkit.
-  - --system-talk-name=org.freedesktop.PolicyKit1
+  # No polkit permission: pkexec is never invoked from inside the sandbox.
+  # Auto-Fix needs the helpers installed on the host (see packaging/README.md),
+  # which is the .deb, so this grant had nothing to authorize.
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
   env:

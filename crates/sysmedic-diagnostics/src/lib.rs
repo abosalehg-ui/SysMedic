@@ -84,6 +84,10 @@ pub fn default_diagnostics() -> Vec<Box<dyn Diagnostic>> {
             rules::security::ssh_password_auth
         ),
         rule!("security-exposed-ports", rules::security::exposed_ports),
+        rule!(
+            "security-discovery-services",
+            rules::security::discovery_services
+        ),
         rule!("smart-failing", rules::smart::failing),
         rule!(
             "smart-reallocated-sectors",
@@ -122,6 +126,7 @@ pub const FINDING_IDS: &[&str] = &[
     "security.firewall_inactive",
     "security.ssh_password_auth",
     "security.exposed_ports",
+    "security.discovery_services",
     "smart.failing",
     "smart.reallocated_sectors",
     "smart.ssd_wear",
@@ -140,7 +145,7 @@ mod doc_guards {
     fn declared_rule_count_matches_the_documentation() {
         assert_eq!(
             super::FINDING_IDS.len(),
-            29,
+            30,
             "rule count changed — update the docs listed above"
         );
     }

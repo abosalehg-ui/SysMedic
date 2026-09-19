@@ -2,7 +2,7 @@
 //! `None` when not applicable). Plans are pure data — building one runs no
 //! commands — so every fix is unit-tested against fixture snapshots.
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use sysmedic_core::fix::{FixCommand, FixPlan};
 use sysmedic_core::lang::LocalizedText;
 use sysmedic_core::{thresholds, Severity, Snapshot};
@@ -48,6 +48,24 @@ pub trait Fix: Send + Sync {
     fn title(&self) -> LocalizedText;
     /// Build the plan for this system, or `None` if there is nothing to do.
     fn plan(&self, snapshot: &Snapshot) -> Option<FixPlan>;
+
+    /// The [`sysmedic_core::Collector`] names [`Fix::plan`] reads.
+    ///
+    /// The privileged helper rebuilds the snapshot **as root** before applying
+    /// a fix. It used to run the whole default collector set — sixteen
+    /// collectors, including `smartctl` opening every block device and
+    /// apt/dpkg/snap/flatpak parsing data off the network and disk — to flip
+    /// the ufw switch, which reads one section. Every one of those is code
+    /// executing as root for no reason, and seconds of waiting after the
+    /// password prompt.
+    ///
+    /// Deliberately has no default: a new fix must say what it reads, because
+    /// the failure mode of guessing (a plan built from an empty section, so
+    /// the fix silently reports "not applicable right now" after the user
+    /// authenticated) is quiet, and the failure mode of forgetting to widen it
+    /// later is quieter still. `fix_collector_names_are_real` holds the names
+    /// to the collectors that actually exist.
+    fn needs_collectors(&self) -> &'static [&'static str];
 
     /// Which privileged helper — and therefore which polkit action — may run
     /// this fix.
@@ -108,6 +126,9 @@ impl Fix for AptClean {
     fn id(&self) -> &'static str {
         "fix.apt_clean"
     }
+    fn needs_collectors(&self) -> &'static [&'static str] {
+        &["packages"]
+    }
     fn title(&self) -> LocalizedText {
         LocalizedText::new("Clear the APT download cache", "تفريغ ذاكرة تنزيل APT")
     }
@@ -147,6 +168,9 @@ impl Fix for JournalVacuum {
     fn id(&self) -> &'static str {
         "fix.journal_vacuum"
     }
+    fn needs_collectors(&self) -> &'static [&'static str] {
+        &["logs"]
+    }
     fn title(&self) -> LocalizedText {
         LocalizedText::new("Trim the systemd journal", "تقليص سجلّ systemd")
     }
@@ -185,6 +209,9 @@ pub struct AutoremoveKernels;
 impl Fix for AutoremoveKernels {
     fn id(&self) -> &'static str {
         "fix.autoremove"
+    }
+    fn needs_collectors(&self) -> &'static [&'static str] {
+        &["packages"]
     }
     fn title(&self) -> LocalizedText {
         LocalizedText::new(
@@ -276,6 +303,9 @@ impl Fix for SnapRetain {
     fn id(&self) -> &'static str {
         "fix.snap_retain"
     }
+    fn needs_collectors(&self) -> &'static [&'static str] {
+        &["snap"]
+    }
     fn title(&self) -> LocalizedText {
         LocalizedText::new(
             "Keep fewer old snap revisions",
@@ -356,6 +386,9 @@ impl Fix for FlatpakRemoveUnused {
     fn id(&self) -> &'static str {
         "fix.flatpak_unused"
     }
+    fn needs_collectors(&self) -> &'static [&'static str] {
+        &["flatpak"]
+    }
     fn title(&self) -> LocalizedText {
         LocalizedText::new(
             "Remove unused Flatpak runtimes",
@@ -391,10 +424,72 @@ impl Fix for FlatpakRemoveUnused {
     }
 }
 
+/// The TCP port `fix.enable_ufw` keeps open when this machine is reachable
+/// over SSH.
+const SSH_PORT: u16 = 22;
+/// The ufw rule spec for it, stored in the journal so `undo` can take it back
+/// out. Validated on the way back in — see [`parse_allow_rule`].
+const SSH_ALLOW_RULE: &str = "22/tcp";
+/// Highest port number a rule spec may name.
+const MAX_PORT: u32 = 65535;
+
+/// A `<port>/tcp` rule spec read back from the journal, or `None` if it is not
+/// one.
+///
+/// `undo` runs as root and the journal is a file on disk, so the only thing
+/// allowed through from it is a port number in range and the literal protocol.
+/// The program and every option stay compiled in, exactly as for
+/// `fix.snap_retain`'s retention count.
+fn parse_allow_rule(restore: &str) -> Option<String> {
+    let (port, proto) = restore.trim().split_once('/')?;
+    if proto != "tcp" {
+        return None;
+    }
+    let port: u32 = port.parse().ok()?;
+    if port == 0 || port > MAX_PORT {
+        return None;
+    }
+    Some(format!("{port}/tcp"))
+}
+
 pub struct EnableUfw;
+
+impl EnableUfw {
+    /// Is this machine reachable over SSH right now?
+    ///
+    /// Two independent signals, because either one alone misses a real case:
+    /// a listening socket on 22 (what the ports collector sees), or an sshd
+    /// configuration that parsed at all (which means sshd is installed, and
+    /// covers the moment between `systemctl enable ssh` and the next boot).
+    fn ssh_reachable(s: &Snapshot) -> bool {
+        let listening = s.ports.as_ref().is_some_and(|ports| {
+            ports
+                .iter()
+                .any(|p| p.exposed && p.port == SSH_PORT && p.proto.starts_with("tcp"))
+        });
+        let configured = s.security.as_ref().is_some_and(|sec| {
+            sec.ssh_permit_root_login.is_some() || sec.ssh_password_auth.is_some()
+        });
+        listening || configured
+    }
+
+    /// `ufw allow <spec>` — the numeric spec, not the `OpenSSH` application
+    /// profile: the profile only exists if `openssh-server` installed it, and
+    /// a missing profile makes ufw exit non-zero, which aborts the whole fix
+    /// at its first command and leaves the firewall off.
+    fn allow(spec: &str) -> FixCommand {
+        FixCommand::new("ufw", &["allow", spec])
+    }
+}
+
 impl Fix for EnableUfw {
     fn id(&self) -> &'static str {
         "fix.enable_ufw"
+    }
+    fn needs_collectors(&self) -> &'static [&'static str] {
+        // `ports` as well as `security`: whether SSH is reachable decides
+        // whether this fix locks the user out of their own machine.
+        &["security", "ports"]
     }
     fn title(&self) -> LocalizedText {
         LocalizedText::new("Enable the firewall", "تفعيل الجدار الناري")
@@ -405,24 +500,110 @@ impl Fix for EnableUfw {
     fn undo(&self) -> Vec<FixCommand> {
         vec![FixCommand::new("ufw", &["disable"])]
     }
+
+    /// Reverse the fix, removing the SSH allowance if this apply added one.
+    ///
+    /// `disable` comes **first** on purpose. `undo` stops at its first failing
+    /// command, and `ufw delete` fails when the rule is already gone (the user
+    /// removed it by hand, say) — with the order reversed, that failure would
+    /// abort before the firewall was switched off and leave the machine in the
+    /// state the user just asked to leave. Disabled-with-a-stale-allow-rule is
+    /// harmless; enabled-when-you-asked-for-disabled is not.
+    fn undo_from(&self, restore: Option<&str>) -> Vec<FixCommand> {
+        let mut commands = self.undo();
+        if let Some(spec) = restore.and_then(parse_allow_rule) {
+            commands.push(FixCommand::new("ufw", &["delete", "allow", &spec]));
+        }
+        commands
+    }
+
     fn plan(&self, s: &Snapshot) -> Option<FixPlan> {
-        if s.security.as_ref()?.firewall_active != Some(false) {
+        let sec = s.security.as_ref()?;
+        if sec.firewall_active != Some(false) {
             return None;
         }
+        // This fix runs `ufw`. Offering it on a machine whose firewall
+        // front-end is firewalld meant an authorization prompt the user
+        // answered with their password, followed by "failed to launch `ufw`"
+        // from inside the privileged helper.
+        if sec.firewall_frontend != Some(sysmedic_core::snapshot::FirewallFrontend::Ufw) {
+            return None;
+        }
+
+        // ufw's default policy is `deny incoming`. On a machine being
+        // administered over SSH, enabling it with no allowance keeps the
+        // *current* session alive (conntrack lets ESTABLISHED through) and
+        // refuses every new one — so the administrator discovers the lockout
+        // at their next login, and `undo`, the thing that would put it right,
+        // needs the access that was just removed. A fix advertised as safe and
+        // reversible must not be able to do that.
+        let keep_ssh = Self::ssh_reachable(s);
+
+        // What the firewall will start blocking, named in the preview: the
+        // consent contract must not be narrower than the effect.
+        let blocked: Vec<String> = s
+            .ports
+            .as_ref()
+            .map(|ports| {
+                ports
+                    .iter()
+                    .filter(|p| p.exposed && !(keep_ssh && p.port == SSH_PORT))
+                    .map(|p| format!("{}/{}", p.port, p.proto))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut commands = Vec::new();
+        if keep_ssh {
+            commands.push(Self::allow(SSH_ALLOW_RULE));
+        }
+        commands.push(FixCommand::new("ufw", &["--force", "enable"]));
+
+        let (ssh_en, ssh_ar) = if keep_ssh {
+            (
+                format!(
+                    " This machine answers on SSH, so port {SSH_PORT}/tcp is allowed first —                      without that, enabling the firewall would lock out every new remote login."
+                ),
+                format!(
+                    " هذا الجهاز يستجيب على SSH، لذا يُسمح للمنفذ {SSH_PORT}/tcp أولاً — بدون ذلك                      يمنع تفعيل الجدار الناري كل دخول بعيد جديد."
+                ),
+            )
+        } else {
+            (String::new(), String::new())
+        };
+        let (blocked_en, blocked_ar) = if blocked.is_empty() {
+            (String::new(), String::new())
+        } else {
+            (
+                format!(
+                    "\n\nReachable from the network today and blocked afterwards: {}.",
+                    blocked.join(", ")
+                ),
+                format!(
+                    "\n\nمنافذ متاحة من الشبكة حالياً وستُمنع بعد التفعيل: {}.",
+                    blocked.join("، ")
+                ),
+            )
+        };
+
         Some(FixPlan {
             id: self.id().into(),
             title: self.title(),
             description: LocalizedText::new(
-                "Turn on ufw with its default policy: deny incoming, allow outgoing. \
-                 Suitable for a desktop with no server software.",
-                "تشغيل ufw بسياسته الافتراضية: منع الوارد، والسماح بالصادر. مناسب لجهاز \
-                 مكتبي لا يشغّل برمجيات خادم.",
+                format!(
+                    "Turn on ufw with its default policy: deny incoming, allow                      outgoing.{ssh_en}{blocked_en}"
+                ),
+                format!(
+                    "تشغيل ufw بسياسته الافتراضية: منع الوارد، والسماح                      بالصادر.{ssh_ar}{blocked_ar}"
+                ),
             ),
-            commands: vec![FixCommand::new("ufw", &["--force", "enable"])],
+            commands,
             affected_paths: vec!["/etc/ufw".into(), "/lib/systemd/system/ufw.service".into()],
             reversible: true,
-            undo: self.undo(),
-            restore: None,
+            // Carry the allowance into the journal so undo removes exactly
+            // what this apply added, and nothing else.
+            undo: self.undo_from(keep_ssh.then(|| SSH_ALLOW_RULE.to_string()).as_deref()),
+            restore: keep_ssh.then(|| SSH_ALLOW_RULE.to_string()),
             risk: Severity::Low,
             needs_root: true,
         })
@@ -432,7 +613,7 @@ impl Fix for EnableUfw {
 /// The registry, built once. Previously `all()` boxed six trait objects on
 /// every call, and `find`/`undo_commands` went through it — so simply
 /// rendering the findings list rebuilt the whole registry per finding.
-static REGISTRY: Lazy<Vec<Box<dyn Fix>>> = Lazy::new(|| {
+static REGISTRY: LazyLock<Vec<Box<dyn Fix>>> = LazyLock::new(|| {
     vec![
         Box::new(AptClean) as Box<dyn Fix>,
         Box::new(JournalVacuum),
@@ -470,8 +651,8 @@ pub fn undo_commands(id: &str) -> Option<Vec<FixCommand>> {
 /// validates against before doing anything as root; a fix added to `all()` but
 /// forgotten here would have been rejected, and — worse — an id left here
 /// after its fix was removed would have been accepted.
-static FIX_ID_LIST: Lazy<Vec<&'static str>> =
-    Lazy::new(|| REGISTRY.iter().map(|f| f.id()).collect());
+static FIX_ID_LIST: LazyLock<Vec<&'static str>> =
+    LazyLock::new(|| REGISTRY.iter().map(|f| f.id()).collect());
 
 /// Every fix id the helper will accept.
 pub fn fix_ids() -> &'static [&'static str] {
@@ -539,10 +720,21 @@ mod tests {
             }),
             security: Some(SecurityInfo {
                 firewall_active: Some(false),
+                firewall_frontend: Some(FirewallFrontend::Ufw),
                 ssh_permit_root_login: None,
                 ssh_password_auth: None,
             }),
             ..Default::default()
+        }
+    }
+
+    /// An exposed listening port, for the SSH-lockout tests.
+    pub(crate) fn port(proto: &'static str, port: u16) -> ListeningPort {
+        ListeningPort {
+            proto,
+            address: "0.0.0.0".into(),
+            port,
+            exposed: true,
         }
     }
 
@@ -665,6 +857,7 @@ mod tests {
         let mut s = Snapshot {
             security: Some(SecurityInfo {
                 firewall_active: Some(false),
+                firewall_frontend: Some(FirewallFrontend::Ufw),
                 ssh_permit_root_login: None,
                 ssh_password_auth: None,
             }),
@@ -676,6 +869,158 @@ mod tests {
         // Not applicable once the firewall is active.
         s.security.as_mut().unwrap().firewall_active = Some(true);
         assert!(EnableUfw.plan(&s).is_none());
+    }
+
+    #[test]
+    fn enabling_the_firewall_keeps_ssh_reachable() {
+        // The lockout case: a machine administered over SSH. `deny incoming`
+        // with no allowance keeps the current session (ESTABLISHED) and
+        // refuses every new login — and `undo` needs the access it removed.
+        let s = Snapshot {
+            security: Some(SecurityInfo {
+                firewall_active: Some(false),
+                firewall_frontend: Some(FirewallFrontend::Ufw),
+                ..Default::default()
+            }),
+            ports: Some(vec![port("tcp", 22), port("tcp", 80)]),
+            ..Default::default()
+        };
+        let plan = EnableUfw.plan(&s).unwrap();
+        assert_eq!(
+            plan.commands[0].display(),
+            "ufw allow 22/tcp",
+            "the allow rule must come before enable, or the window is open"
+        );
+        assert_eq!(plan.commands[1].display(), "ufw --force enable");
+
+        // The consent text says so, in both languages...
+        assert!(plan.description.en.contains("22/tcp"));
+        assert!(plan.description.ar.contains("22/tcp"));
+        // ...and names what the firewall will start blocking.
+        assert!(
+            plan.description.en.contains("80/tcp"),
+            "{}",
+            plan.description.en
+        );
+        assert!(!plan.description.en.contains("blocked afterwards: 22/tcp"));
+
+        // Undo removes exactly what this apply added, disabling first.
+        assert_eq!(plan.restore.as_deref(), Some("22/tcp"));
+        assert_eq!(plan.undo[0].display(), "ufw disable");
+        assert_eq!(plan.undo[1].display(), "ufw delete allow 22/tcp");
+    }
+
+    #[test]
+    fn an_installed_sshd_counts_even_with_no_listening_socket() {
+        // sshd enabled but not yet started: the ports collector sees nothing,
+        // the sshd_config parse does.
+        let s = Snapshot {
+            security: Some(SecurityInfo {
+                firewall_active: Some(false),
+                firewall_frontend: Some(FirewallFrontend::Ufw),
+                ssh_password_auth: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            EnableUfw.plan(&s).unwrap().commands[0].display(),
+            "ufw allow 22/tcp"
+        );
+    }
+
+    #[test]
+    fn a_desktop_with_no_ssh_gets_no_allow_rule() {
+        // The firewall should not be pre-punctured on a machine that has no
+        // reason for the hole.
+        let s = Snapshot {
+            security: Some(SecurityInfo {
+                firewall_active: Some(false),
+                firewall_frontend: Some(FirewallFrontend::Ufw),
+                ..Default::default()
+            }),
+            ports: Some(vec![port("udp", 5353)]),
+            ..Default::default()
+        };
+        let plan = EnableUfw.plan(&s).unwrap();
+        assert_eq!(plan.commands.len(), 1);
+        assert_eq!(plan.commands[0].display(), "ufw --force enable");
+        assert!(plan.restore.is_none());
+        assert_eq!(plan.undo.len(), 1);
+    }
+
+    #[test]
+    fn the_ufw_fix_is_not_offered_on_a_firewalld_machine() {
+        // Fedora/RHEL with firewalld installed and switched off: the old plan
+        // fired, the user typed their password, and the helper failed with
+        // "failed to launch `ufw`".
+        let s = Snapshot {
+            security: Some(SecurityInfo {
+                firewall_active: Some(false),
+                firewall_frontend: Some(FirewallFrontend::Firewalld),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(EnableUfw.plan(&s).is_none());
+
+        // And a machine with no front-end SysMedic understands is left alone.
+        let s = Snapshot {
+            security: Some(SecurityInfo {
+                firewall_active: Some(false),
+                firewall_frontend: None,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert!(EnableUfw.plan(&s).is_none());
+    }
+
+    #[test]
+    fn the_undo_allow_rule_is_validated_before_root_runs_it() {
+        // `restore` comes from a file on disk and is substituted into a
+        // command run as root, so only a plausible rule spec gets through.
+        for hostile in [
+            "22/tcp; rm -rf /",
+            "$(id)/tcp",
+            "-1/tcp",
+            "0/tcp",
+            "70000/tcp",
+            "22/udp",
+            "OpenSSH",
+            "",
+            "../../etc/passwd",
+        ] {
+            let commands = EnableUfw.undo_from(Some(hostile));
+            assert_eq!(
+                commands.len(),
+                1,
+                "hostile restore {hostile:?} reached a root command"
+            );
+            assert_eq!(commands[0].display(), "ufw disable");
+        }
+        // A legitimate spec is honoured, normalized, and applied after disable.
+        let commands = EnableUfw.undo_from(Some(" 2222/tcp "));
+        assert_eq!(commands[1].display(), "ufw delete allow 2222/tcp");
+    }
+
+    #[test]
+    fn every_fix_declares_collectors_it_actually_reads() {
+        // The privileged helper builds its snapshot from these names; an empty
+        // list would mean a plan built from an empty snapshot, i.e. a fix that
+        // reports "not applicable" right after the user authenticated.
+        for fix in all() {
+            assert!(
+                !fix.needs_collectors().is_empty(),
+                "{} declares no collectors",
+                fix.id()
+            );
+        }
+        // And the one fix whose safety depends on a second section says so.
+        assert!(find("fix.enable_ufw")
+            .unwrap()
+            .needs_collectors()
+            .contains(&"ports"));
     }
 
     #[test]

@@ -12,7 +12,7 @@ use sysmedic_core::fix::FixPlan;
 use sysmedic_core::HealthReport;
 use sysmedic_knowledge::Lang;
 
-use crate::viewmodel::{self, Strings};
+use crate::viewmodel::{self, HelperFailure, Strings};
 
 const REPO_URL: &str = "https://github.com/abosalehg-ui/SysMedic";
 const ISSUES_URL: &str = "https://github.com/abosalehg-ui/SysMedic/issues";
@@ -89,6 +89,7 @@ pub fn build_window(app: &adw::Application) {
     // Primary menu with an "About SysMedic" entry (author + repo live there).
     let menu = gio::Menu::new();
     menu.append(Some(strings.export_report), Some("app.export"));
+    menu.append(Some(strings.undo_last_fix), Some("app.undo"));
     menu.append(Some(strings.about), Some("app.about"));
     let menu_button = gtk::MenuButton::builder()
         .icon_name("open-menu-symbolic")
@@ -184,6 +185,8 @@ pub fn build_window(app: &adw::Application) {
     // `run_checkup` needs to reference itself so a finished fix can trigger a
     // re-scan. A shared cell breaks the chicken-and-egg of the self-reference.
     let self_ref: Rc<RefCell<Option<RefreshFn>>> = Rc::new(RefCell::new(None));
+
+    install_undo_action(app, &window, &toasts, self_ref.clone(), lang);
     let run_checkup: RefreshFn = Rc::new({
         let clamp = clamp.clone();
         let spinner = spinner.clone();
@@ -332,6 +335,89 @@ fn install_export_action(
     app.set_accels_for_action("app.export", &["<Ctrl>e"]);
 }
 
+/// "Undo last fix…" — revert the most recent reversible fix from the GUI.
+///
+/// The confirmation dialog has always promised "This fix can be undone", and
+/// until now the only way to act on that promise was to know that
+/// `sysmedic undo --yes` exists and open a terminal. The window that made the
+/// promise offers no way to keep it.
+///
+/// Reading the journal here is only possible because it is world-readable:
+/// what it needs is integrity, not secrecy (see `sysmedic_fixes::journal`).
+fn install_undo_action(
+    app: &adw::Application,
+    window: &adw::ApplicationWindow,
+    toasts: &adw::ToastOverlay,
+    refresh: Rc<RefCell<Option<RefreshFn>>>,
+    lang: Lang,
+) {
+    let strings = Strings::for_lang(lang);
+    let action = gio::SimpleAction::new("undo", None);
+    action.connect_activate({
+        let window = window.clone();
+        let toasts = toasts.clone();
+        move |_, _| {
+            // What would be undone, named in the user's language.
+            let title = sysmedic_fixes::journal_read_path()
+                .and_then(|path| sysmedic_fixes::Journal::load(path).ok())
+                .and_then(|journal| sysmedic_fixes::undo_title_in(&journal, lang));
+            let Some(title) = title else {
+                toasts.add_toast(adw::Toast::new(strings.undo_nothing));
+                return;
+            };
+
+            let dialog = adw::AlertDialog::new(Some(strings.undo_confirm_title), Some(&title));
+            dialog.add_response("cancel", strings.cancel);
+            dialog.add_response("undo", strings.undo_action);
+            dialog.set_response_appearance("undo", adw::ResponseAppearance::Suggested);
+            dialog.set_default_response(Some("cancel"));
+            dialog.set_close_response("cancel");
+
+            // A separate handle for the response callback, so the original
+            // stays available for `dialog.present` below.
+            let cb_window = window.clone();
+            let toasts = toasts.clone();
+            let refresh = refresh.clone();
+            dialog.connect_response(None, move |_, response| {
+                if response != "undo" {
+                    return;
+                }
+                let window = cb_window.clone();
+                let toasts = toasts.clone();
+                let on_changed = refresh.borrow().clone();
+                let running = adw::Toast::new(strings.undo_running);
+                running.set_timeout(0);
+                toasts.add_toast(running.clone());
+                glib::spawn_future_local(async move {
+                    // Undo is always the routine tier: only a reversible fix is
+                    // undoable, and the helper re-checks the tier of the entry
+                    // it is about to reverse.
+                    let helper = sysmedic_fixes::undo_helper();
+                    let result = gtk::gio::spawn_blocking(move || run_helper(helper, vec!["undo"]))
+                        .await
+                        .unwrap_or(Err((
+                            HelperFailure::Failed,
+                            "the helper could not be started".to_string(),
+                        )));
+                    running.dismiss();
+                    match result {
+                        Ok(()) => toasts.add_toast(adw::Toast::new(strings.undo_done)),
+                        Err(failure) => {
+                            show_failure(&window, lang, strings.undo_failed_title, failure)
+                        }
+                    }
+                    if let Some(refresh) = on_changed {
+                        refresh();
+                    }
+                });
+            });
+            dialog.present(Some(&window));
+        }
+    });
+    app.add_action(&action);
+    app.set_accels_for_action("app.undo", &["<Ctrl>z"]);
+}
+
 /// The About dialog: app identity, author, repository and contact.
 fn show_about(parent: &adw::ApplicationWindow, lang: Lang) {
     let strings = Strings::for_lang(lang);
@@ -350,6 +436,40 @@ fn show_about(parent: &adw::ApplicationWindow, lang: Lang) {
         .build();
     about.add_link("Source code", REPO_URL);
     about.present(Some(parent));
+}
+
+/// Run a privileged helper action through pkexec.
+///
+/// Returns the helper's own words on failure. `.status()` threw them away, so
+/// every failure — a dismissed password prompt, a missing helper, `apt-get`
+/// dying on a held dpkg lock — reached the user as the same sentence.
+fn run_helper(helper: String, args: Vec<&'static str>) -> Result<(), (HelperFailure, String)> {
+    match Command::new("pkexec").arg(&helper).args(&args).output() {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => Err((
+            viewmodel::classify_failure(out.status.code()),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )),
+        // pkexec itself is missing or could not be spawned.
+        Err(e) => Err((HelperFailure::NotAuthorized, e.to_string())),
+    }
+}
+
+/// Show the failure of a privileged operation, saying which of the three
+/// things went wrong and quoting the helper when it has something to say.
+fn show_failure(
+    window: &adw::ApplicationWindow,
+    lang: Lang,
+    title: &str,
+    (failure, stderr): (HelperFailure, String),
+) {
+    let strings = Strings::for_lang(lang);
+    let dialog = adw::AlertDialog::new(
+        Some(title),
+        Some(&viewmodel::failure_body(failure, &stderr, lang)),
+    );
+    dialog.add_response("ok", strings.ok);
+    dialog.present(Some(window));
 }
 
 /// What the UI should do after the helper exits. Pure, so the branch that
@@ -444,31 +564,35 @@ fn confirm_and_apply(
             });
             let id = fix_id.clone();
             // pkexec prompts polkit; the helper does the privileged work.
-            let succeeded = gtk::gio::spawn_blocking(move || {
-                Command::new("pkexec")
-                    .arg(helper)
+            let result = gtk::gio::spawn_blocking(move || {
+                match Command::new("pkexec")
+                    .arg(&helper)
                     .arg("apply")
                     .arg(&id)
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false)
+                    .output()
+                {
+                    Ok(out) if out.status.success() => Ok(()),
+                    Ok(out) => Err((
+                        viewmodel::classify_failure(out.status.code()),
+                        String::from_utf8_lossy(&out.stderr).into_owned(),
+                    )),
+                    Err(e) => Err((HelperFailure::NotAuthorized, e.to_string())),
+                }
             })
             .await
-            .unwrap_or(false);
+            .unwrap_or(Err((
+                HelperFailure::Failed,
+                "the helper could not be started".to_string(),
+            )));
             running.dismiss();
-            if fix_outcome(succeeded) == FixOutcome::Applied {
+            if fix_outcome(result.is_ok()) == FixOutcome::Applied {
                 // Say it worked — a silent re-scan left users guessing whether
                 // the fix ran or the score just changed.
                 toasts.add_toast(adw::Toast::new(strings.fix_applied));
-            } else {
-                // Tell the user why nothing changed instead of a silent re-scan
-                // (auth cancelled, fix failed, or the helper isn't installed).
-                let error = adw::AlertDialog::new(
-                    Some(strings.fix_failed_title),
-                    Some(strings.fix_failed_body),
-                );
-                error.add_response("ok", strings.ok);
-                error.present(Some(&window));
+            } else if let Err(failure) = result {
+                // Tell the user *which* thing went wrong, and what the helper
+                // said, instead of one sentence covering three situations.
+                show_failure(&window, lang, strings.fix_failed_title, failure);
             }
             on_changed(); // re-scan so the UI reflects the new state
         });
@@ -528,7 +652,7 @@ fn report_view(
     if entries.len() >= 2 {
         let spark = sysmedic_history::sparkline(&entries, 40);
         let trend = sysmedic_history::trend_delta(&entries)
-            .map(|d| format!("  ({d:+} since first)"))
+            .map(|d| format!("  ({d:+} {})", strings.trend_since_first))
             .unwrap_or_default();
         let history = gtk::Label::new(Some(&format!("{spark}{trend}")));
         history.add_css_class("dim-label");

@@ -21,6 +21,13 @@ use sysmedic_knowledge::Lang;
                   License: GPL-3.0-or-later"
 )]
 struct Cli {
+    /// Output language (defaults to $LC_ALL/$LC_MESSAGES/$LANG)
+    ///
+    /// Global: accepted before or after any subcommand. It started as a flag
+    /// on `checkup` and `explain` only, which is why every other command
+    /// printed English whatever the locale.
+    #[arg(long, value_enum, global = true)]
+    lang: Option<CliLang>,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -35,9 +42,6 @@ enum Command {
         /// Write the report to a file instead of stdout
         #[arg(long)]
         output: Option<PathBuf>,
-        /// Explanation language (defaults to $LC_ALL/$LC_MESSAGES/$LANG)
-        #[arg(long, value_enum)]
-        lang: Option<CliLang>,
         /// Exit 1 when the worst finding is High, 2 when it is Critical
         /// (default: always exit 0). For monitoring and CI.
         #[arg(long)]
@@ -49,9 +53,6 @@ enum Command {
     Explain {
         /// Finding id, e.g. storage.disk_nearly_full
         id: String,
-        /// Explanation language (defaults to $LC_ALL/$LC_MESSAGES/$LANG)
-        #[arg(long, value_enum)]
-        lang: Option<CliLang>,
         /// Extra evidence to pass to a deep explanation (requires --deep)
         #[arg(long, requires = "deep")]
         context: Option<String>,
@@ -184,19 +185,17 @@ fn main() -> std::process::ExitCode {
 
 fn run() -> Result<u8> {
     let cli = Cli::parse();
+    let lang = resolve_lang(cli.lang);
     match cli.command.unwrap_or(Command::Checkup {
         format: Format::Text,
         output: None,
-        lang: None,
         exit_code: false,
     }) {
         Command::Checkup {
             format,
             output,
-            lang,
             exit_code,
         } => {
-            let lang = resolve_lang(lang);
             eprintln!("Running SysMedic checkup...");
             let report = engine().run();
 
@@ -258,13 +257,7 @@ fn run() -> Result<u8> {
                 println!("{name}");
             }
         }
-        Command::Explain {
-            id,
-            lang,
-            context,
-            deep,
-        } => {
-            let lang = resolve_lang(lang);
+        Command::Explain { id, context, deep } => {
             match sysmedic_knowledge::explain(&id, lang) {
                 Some(exp) => {
                     // The five answers are localized, so their labels must be
@@ -315,20 +308,20 @@ fn run() -> Result<u8> {
             }
         }
         Command::Fix { id, dry_run, yes } => match id {
-            Some(id) => fix::apply(&id, dry_run, yes)?,
-            None => fix::list()?,
+            Some(id) => fix::apply(&id, dry_run, yes, lang)?,
+            None => fix::list(lang)?,
         },
-        Command::Undo { yes } => fix::undo(yes)?,
-        Command::Disk { path, depth, top } => tools::disk(path, depth, top)?,
-        Command::Network => tools::network()?,
-        Command::Monitor { quiet } => tools::monitor(quiet)?,
-        Command::History => tools::history()?,
+        Command::Undo { yes } => fix::undo(yes, lang)?,
+        Command::Disk { path, depth, top } => tools::disk(path, depth, top, lang)?,
+        Command::Network => tools::network(lang)?,
+        Command::Monitor { quiet } => tools::monitor(quiet, lang)?,
+        Command::History => tools::history(lang)?,
         Command::Schedule { action } => match action {
-            ScheduleAction::Daily => schedule::enable(schedule::Cadence::Daily)?,
-            ScheduleAction::Weekly => schedule::enable(schedule::Cadence::Weekly)?,
-            ScheduleAction::Monthly => schedule::enable(schedule::Cadence::Monthly)?,
-            ScheduleAction::Off => schedule::disable()?,
-            ScheduleAction::Status => schedule::status()?,
+            ScheduleAction::Daily => schedule::enable(schedule::Cadence::Daily, lang)?,
+            ScheduleAction::Weekly => schedule::enable(schedule::Cadence::Weekly, lang)?,
+            ScheduleAction::Monthly => schedule::enable(schedule::Cadence::Monthly, lang)?,
+            ScheduleAction::Off => schedule::disable(lang)?,
+            ScheduleAction::Status => schedule::status(lang)?,
         },
     }
     Ok(exit::HEALTHY)

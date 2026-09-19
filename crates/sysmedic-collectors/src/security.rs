@@ -1,4 +1,4 @@
-use sysmedic_core::snapshot::SecurityInfo;
+use sysmedic_core::snapshot::{FirewallFrontend, SecurityInfo};
 use sysmedic_core::{Collector, Snapshot};
 
 use crate::util;
@@ -12,8 +12,10 @@ impl Collector for SecurityCollector {
 
     fn collect(&self, snapshot: &mut Snapshot) {
         let sshd = read_effective_sshd_config();
+        let (firewall_active, firewall_frontend) = firewall_state();
         snapshot.security = Some(SecurityInfo {
-            firewall_active: firewall_active(),
+            firewall_active,
+            firewall_frontend,
             ssh_permit_root_login: sshd
                 .as_deref()
                 .and_then(|c| parse_directive_bool(c, "PermitRootLogin")),
@@ -130,29 +132,38 @@ const FIREWALLD_UNITS: &[&str] = &[
     "/etc/systemd/system/firewalld.service",
 ];
 
-/// Firewall state, in order of authority:
+/// Firewall state **and which front-end it describes**, in order of authority:
 ///
 /// 1. `ufw status` — the live rule state, but it requires root.
 /// 2. `/etc/ufw/ufw.conf` (`ENABLED=yes|no`) — ufw's own persisted setting,
 ///    readable by anyone.
 /// 3. firewalld's unit state, when firewalld is installed.
 ///
-/// Step 2 is why this exists. The only branch that could ever return
-/// `Some(false)` was the root-only `ufw status`, and both the
+/// Step 2 is why the fallback chain exists. The only branch that could ever
+/// return `Some(false)` was the root-only `ufw status`, and both the
 /// `security.firewall_inactive` rule and the `fix.enable_ufw` fix require
 /// exactly `Some(false)` — so on the normal unprivileged run (the mode the
 /// whole app is designed around) a machine with ufw installed and switched
 /// off reported no finding, offered no fix, and scored a clean 100 for
 /// Security. An absent answer was being read as a good one.
 ///
-/// `None` still means "no firewall frontend we understand", e.g. a
+/// The **front-end** is returned alongside because the answer alone is
+/// ambiguous: step 3 also yields `Some(false)`, and a caller that assumed ufw
+/// offered `ufw --force enable` on a Fedora/RHEL box where no `ufw` binary
+/// exists. The fix now requires [`FirewallFrontend::Ufw`] and the rule names
+/// the front-end the user actually has.
+///
+/// `(None, None)` still means "no firewall front-end we understand", e.g. a
 /// hand-rolled nftables ruleset — the rule stays quiet rather than guessing.
-fn firewall_active() -> Option<bool> {
+fn firewall_state() -> (Option<bool>, Option<FirewallFrontend>) {
     if let Some(out) = util::run("ufw", &["status"]) {
-        return Some(out.contains("Status: active"));
+        return (
+            Some(out.contains("Status: active")),
+            Some(FirewallFrontend::Ufw),
+        );
     }
     if let Some(state) = util::read_file(UFW_CONF).and_then(|c| parse_ufw_conf(&c)) {
-        return Some(state);
+        return (Some(state), Some(FirewallFrontend::Ufw));
     }
     if FIREWALLD_UNITS
         .iter()
@@ -161,10 +172,13 @@ fn firewall_active() -> Option<bool> {
         // `is-active` exits non-zero for an inactive unit, so capture the
         // output regardless of status rather than treating it as no answer.
         if let Some(out) = util::run_captured("systemctl", &["is-active", "firewalld"]) {
-            return Some(out.stdout.trim() == "active");
+            return (
+                Some(out.stdout.trim() == "active"),
+                Some(FirewallFrontend::Firewalld),
+            );
         }
     }
-    None
+    (None, None)
 }
 
 /// `ENABLED=yes|no` out of `/etc/ufw/ufw.conf`, or `None` when the key is

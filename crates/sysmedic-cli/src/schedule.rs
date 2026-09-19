@@ -11,6 +11,9 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use owo_colors::{OwoColorize, Stream};
+use sysmedic_core::Lang;
+
+use crate::text::tools;
 
 const SERVICE: &str = "sysmedic-checkup.service";
 const TIMER: &str = "sysmedic-checkup.timer";
@@ -32,11 +35,22 @@ impl Cadence {
         }
     }
 
+    /// The machine-facing label, used in the unit description.
     fn label(self) -> &'static str {
         match self {
             Cadence::Daily => "daily",
             Cadence::Weekly => "weekly",
             Cadence::Monthly => "monthly",
+        }
+    }
+
+    /// The label as the user reads it.
+    fn label_in(self, lang: Lang) -> &'static str {
+        let t = tools(lang);
+        match self {
+            Cadence::Daily => t.cadence_daily,
+            Cadence::Weekly => t.cadence_weekly,
+            Cadence::Monthly => t.cadence_monthly,
         }
     }
 }
@@ -118,7 +132,8 @@ fn systemctl(args: &[&str]) -> Result<()> {
 }
 
 /// Install the timer for `cadence`.
-pub fn enable(cadence: Cadence) -> Result<()> {
+pub fn enable(cadence: Cadence, lang: Lang) -> Result<()> {
+    let t = tools(lang);
     let dir = user_unit_dir()?;
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     std::fs::write(dir.join(SERVICE), service_unit(&exe()))?;
@@ -127,15 +142,16 @@ pub fn enable(cadence: Cadence) -> Result<()> {
     systemctl(&["daemon-reload"]).ok();
     match systemctl(&["enable", "--now", TIMER]) {
         Ok(()) => println!(
-            "{} Scheduled {} checkups. See status with `systemctl --user list-timers`.",
+            "{} {} {}",
             "✓".if_supports_color(Stream::Stdout, |t| t.green()),
-            cadence.label()
+            cadence.label_in(lang),
+            t.schedule_enabled
         ),
         Err(_) => println!(
-            "{} Installed the {} timer units, but could not activate them here \
-             (no user systemd session). On your desktop run:\n    systemctl --user enable --now {}",
+            "{} {} {}\n    systemctl --user enable --now {}",
             "!".if_supports_color(Stream::Stdout, |t| t.yellow()),
-            cadence.label(),
+            cadence.label_in(lang),
+            t.schedule_not_activated,
             TIMER
         ),
     }
@@ -143,34 +159,38 @@ pub fn enable(cadence: Cadence) -> Result<()> {
 }
 
 /// Remove the timer.
-pub fn disable() -> Result<()> {
+pub fn disable(lang: Lang) -> Result<()> {
     systemctl(&["disable", "--now", TIMER]).ok();
     let dir = user_unit_dir()?;
     let _ = std::fs::remove_file(dir.join(TIMER));
     let _ = std::fs::remove_file(dir.join(SERVICE));
     systemctl(&["daemon-reload"]).ok();
     println!(
-        "{} Scheduled checkups disabled.",
-        "✓".if_supports_color(Stream::Stdout, |t| t.green())
+        "{} {}",
+        "✓".if_supports_color(Stream::Stdout, |t| t.green()),
+        tools(lang).schedule_disabled
     );
     Ok(())
 }
 
 /// Show whether the timer is installed and when it next runs.
-pub fn status() -> Result<()> {
+pub fn status(lang: Lang) -> Result<()> {
+    let t = tools(lang);
     let installed = user_unit_dir()
         .map(|d| d.join(TIMER).exists())
         .unwrap_or(false);
     if !installed {
         println!(
-            "Scheduled checkups: {}. Enable with `sysmedic schedule daily`.",
-            "off".if_supports_color(Stream::Stdout, |t| t.yellow())
+            "{} {}  (`sysmedic schedule daily`)",
+            t.schedule_status_off,
+            t.no.if_supports_color(Stream::Stdout, |t| t.yellow())
         );
         return Ok(());
     }
     println!(
-        "Scheduled checkups: {}",
-        "on".if_supports_color(Stream::Stdout, |t| t.green())
+        "{} {}",
+        t.schedule_status_on,
+        t.yes.if_supports_color(Stream::Stdout, |t| t.green())
     );
     // Best-effort: show the next run time.
     let _ = std::process::Command::new("systemctl")

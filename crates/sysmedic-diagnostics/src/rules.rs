@@ -607,7 +607,58 @@ pub mod network {
 }
 
 pub mod security {
+    use sysmedic_core::snapshot::{FirewallFrontend, ListeningPort};
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
+
+    /// UDP ports a *client* binds to receive replies on, not services anyone
+    /// can call.
+    ///
+    /// A DHCP client holds 68/udp (546 for DHCPv6) on virtually every machine
+    /// that gets its address automatically, so counting them as "services
+    /// listening on the network" meant `security.exposed_ports` fired on
+    /// essentially every desktop — a permanent 5-point deduction users learn
+    /// to scroll past, which is exactly what makes them miss the finding on
+    /// the day it names something real.
+    const CLIENT_UDP_PORTS: &[u16] = &[68, 546];
+
+    /// Local-network discovery services: reachable by design, and switching
+    /// them off breaks printer and file-share discovery. Reported separately
+    /// as [`Severity::Info`] (zero penalty) rather than counted among exposed
+    /// services or hidden entirely.
+    const DISCOVERY_PORTS: &[(u16, &str)] = &[(5353, "mDNS/Avahi"), (1900, "SSDP/UPnP")];
+
+    /// How an exposed port should be reported.
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    pub enum PortClass {
+        /// A client socket bound for replies — not reported at all.
+        Client,
+        /// A local-network discovery service — reported as `Info`.
+        Discovery,
+        /// Anything else reachable from the network.
+        Service,
+    }
+
+    /// Classify one exposed port. Pure, so the policy is unit-tested rather
+    /// than inferred from the finding text.
+    pub fn classify_port(port: &ListeningPort) -> PortClass {
+        let udp = port.proto.starts_with("udp");
+        if udp && CLIENT_UDP_PORTS.contains(&port.port) {
+            return PortClass::Client;
+        }
+        if DISCOVERY_PORTS.iter().any(|(p, _)| *p == port.port) {
+            return PortClass::Discovery;
+        }
+        PortClass::Service
+    }
+
+    /// The human name of a discovery port, for the evidence line.
+    fn discovery_name(port: u16) -> &'static str {
+        DISCOVERY_PORTS
+            .iter()
+            .find(|(p, _)| *p == port)
+            .map(|(_, name)| *name)
+            .unwrap_or("discovery")
+    }
 
     pub fn ssh_root_login(s: &Snapshot) -> Vec<Finding> {
         let Some(sec) = &s.security else {
@@ -626,6 +677,12 @@ pub mod security {
         .with_fix_hint("set 'PermitRootLogin prohibit-password' in /etc/ssh/sshd_config")]
     }
 
+    /// The firewall is installed and switched off.
+    ///
+    /// The text and the suggested command follow the front-end the machine
+    /// actually has: the rule used to name ufw unconditionally, so a
+    /// Fedora/RHEL user with firewalld disabled was told to run a command for
+    /// a package they do not have installed.
     pub fn firewall_inactive(s: &Snapshot) -> Vec<Finding> {
         let Some(sec) = &s.security else {
             return vec![];
@@ -633,14 +690,27 @@ pub mod security {
         if sec.firewall_active != Some(false) {
             return vec![];
         }
+        let (name, hint) = match sec.firewall_frontend {
+            Some(FirewallFrontend::Firewalld) => {
+                ("firewalld", "sudo systemctl enable --now firewalld")
+            }
+            // ufw, or an older snapshot that recorded no front-end at all
+            // (the field is newer than the flag, and ufw was the only
+            // front-end that could produce `Some(false)` back then).
+            _ => ("ufw", "sudo ufw enable"),
+        };
         vec![Finding::new(
             "security.firewall_inactive",
             Category::Security,
             Severity::Medium,
             "Firewall is installed but inactive",
-            "ufw is present but not enabled; all listening services are exposed to the local network.",
+            format!(
+                "{name} is present but not enabled; all listening services are exposed to the \
+                 local network."
+            ),
         )
-        .with_fix_hint("sudo ufw enable")]
+        .with_args(vec![name.to_string()])
+        .with_fix_hint(hint)]
     }
 
     pub fn ssh_password_auth(s: &Snapshot) -> Vec<Finding> {
@@ -664,7 +734,7 @@ pub mod security {
         let Some(ports) = &s.ports else { return vec![] };
         let exposed: Vec<String> = ports
             .iter()
-            .filter(|p| p.exposed)
+            .filter(|p| p.exposed && classify_port(p) == PortClass::Service)
             .map(|p| format!("{}/{} on {}", p.port, p.proto, p.address))
             .collect();
         if exposed.is_empty() {
@@ -680,6 +750,43 @@ pub mod security {
         .with_fix_hint("review with `ss -tulnp`; enable ufw to gate access")
         .with_args(vec![exposed.len().to_string()])
         .with_evidence(exposed)]
+    }
+
+    /// Local-network discovery services that are reachable on purpose.
+    ///
+    /// Split out of [`exposed_ports`] so the audit can mention mDNS and SSDP
+    /// without charging the Security score for them: they are how printers,
+    /// scanners and file shares are found, and a desktop that has them is
+    /// normal, not misconfigured. `Info` carries a zero penalty by design.
+    pub fn discovery_services(s: &Snapshot) -> Vec<Finding> {
+        let Some(ports) = &s.ports else { return vec![] };
+        let found: Vec<String> = ports
+            .iter()
+            .filter(|p| p.exposed && classify_port(p) == PortClass::Discovery)
+            .map(|p| {
+                format!(
+                    "{}/{} on {} ({})",
+                    p.port,
+                    p.proto,
+                    p.address,
+                    discovery_name(p.port)
+                )
+            })
+            .collect();
+        if found.is_empty() {
+            return vec![];
+        }
+        vec![Finding::new(
+            "security.discovery_services",
+            Category::Security,
+            Severity::Info,
+            format!("{} local-network discovery service(s) running", found.len()),
+            "These answer on the local network by design — they are how printers, shares and \
+             cast targets are found. Nothing to fix unless this machine should be invisible.",
+        )
+        .with_fix_hint("to switch off: sudo systemctl disable --now avahi-daemon")
+        .with_args(vec![found.len().to_string()])
+        .with_evidence(found)]
     }
 }
 
@@ -866,6 +973,7 @@ pub mod tests_support {
         });
         s.security = Some(SecurityInfo {
             firewall_active: Some(false),
+            firewall_frontend: Some(FirewallFrontend::Ufw),
             ssh_permit_root_login: Some(true),
             ssh_password_auth: Some(true),
         });
@@ -878,12 +986,29 @@ pub mod tests_support {
             wear_percent: Some(95),
             power_on_hours: Some(1000),
         }]);
-        s.ports = Some(vec![ListeningPort {
-            proto: "tcp",
-            address: "0.0.0.0".into(),
-            port: 22,
-            exposed: true,
-        }]);
+        s.ports = Some(vec![
+            ListeningPort {
+                proto: "tcp",
+                address: "0.0.0.0".into(),
+                port: 22,
+                exposed: true,
+            },
+            // A discovery service and a DHCP client socket: the fixture has to
+            // trip `security.discovery_services` too, and prove the client
+            // port is not counted as an exposed service.
+            ListeningPort {
+                proto: "udp",
+                address: "0.0.0.0".into(),
+                port: 5353,
+                exposed: true,
+            },
+            ListeningPort {
+                proto: "udp",
+                address: "0.0.0.0".into(),
+                port: 68,
+                exposed: true,
+            },
+        ]);
         s
     }
 }
@@ -993,6 +1118,7 @@ mod tests {
         let mut s = snapshot();
         s.security = Some(SecurityInfo {
             firewall_active: Some(true),
+            firewall_frontend: Some(FirewallFrontend::Ufw),
             ssh_permit_root_login: Some(false),
             ssh_password_auth: None,
         });
@@ -1021,6 +1147,85 @@ mod tests {
         for id in crate::FINDING_IDS {
             assert!(fired.iter().any(|f| f == id), "rule for {id} never fired");
         }
+    }
+
+    #[test]
+    fn firewall_rule_names_the_frontend_that_is_installed() {
+        // The rule used to say "ufw" whatever the machine ran, and hand a
+        // Fedora user a command for a package they do not have.
+        let mut s = snapshot();
+        s.security = Some(SecurityInfo {
+            firewall_active: Some(false),
+            firewall_frontend: Some(FirewallFrontend::Firewalld),
+            ..Default::default()
+        });
+        let f = &super::security::firewall_inactive(&s)[0];
+        assert!(f.summary.contains("firewalld"), "{}", f.summary);
+        assert!(!f.summary.contains("ufw"), "{}", f.summary);
+        assert_eq!(
+            f.fix_hint.as_deref(),
+            Some("sudo systemctl enable --now firewalld")
+        );
+        assert_eq!(f.args, vec!["firewalld".to_string()]);
+
+        s.security.as_mut().unwrap().firewall_frontend = Some(FirewallFrontend::Ufw);
+        let f = &super::security::firewall_inactive(&s)[0];
+        assert!(f.summary.contains("ufw"));
+        assert_eq!(f.fix_hint.as_deref(), Some("sudo ufw enable"));
+
+        // An older snapshot with no front-end recorded keeps the historical
+        // ufw wording rather than dropping the finding.
+        s.security.as_mut().unwrap().firewall_frontend = None;
+        assert_eq!(
+            super::security::firewall_inactive(&s)[0]
+                .fix_hint
+                .as_deref(),
+            Some("sudo ufw enable")
+        );
+    }
+
+    #[test]
+    fn client_sockets_and_discovery_are_not_counted_as_exposed_services() {
+        use super::security::{classify_port, PortClass};
+        let port = |proto: &'static str, port: u16| ListeningPort {
+            proto,
+            address: "0.0.0.0".into(),
+            port,
+            exposed: true,
+        };
+        // A DHCP client socket and mDNS are on virtually every desktop; before
+        // this split they produced a permanent "2 services listening" finding.
+        assert_eq!(classify_port(&port("udp", 68)), PortClass::Client);
+        assert_eq!(classify_port(&port("udp6", 546)), PortClass::Client);
+        assert_eq!(classify_port(&port("udp", 5353)), PortClass::Discovery);
+        assert_eq!(classify_port(&port("udp", 1900)), PortClass::Discovery);
+        assert_eq!(classify_port(&port("tcp", 22)), PortClass::Service);
+        // The client exemption is UDP-only: a TCP service on 68 is not a
+        // DHCP client and must still be reported.
+        assert_eq!(classify_port(&port("tcp", 68)), PortClass::Service);
+
+        let mut s = snapshot();
+        s.ports = Some(vec![port("udp", 68), port("udp", 5353), port("tcp", 22)]);
+        let exposed = super::security::exposed_ports(&s);
+        assert_eq!(exposed.len(), 1);
+        assert_eq!(exposed[0].evidence, vec!["22/tcp on 0.0.0.0"]);
+
+        let discovery = super::security::discovery_services(&s);
+        assert_eq!(discovery.len(), 1);
+        assert_eq!(discovery[0].severity, Severity::Info);
+        assert!(discovery[0].evidence[0].contains("mDNS/Avahi"));
+
+        // A machine with nothing but client and discovery sockets gets no
+        // exposed-services finding at all.
+        s.ports = Some(vec![port("udp", 68), port("udp", 5353)]);
+        assert!(super::security::exposed_ports(&s).is_empty());
+    }
+
+    #[test]
+    fn discovery_findings_cost_nothing() {
+        // Info carries a zero penalty: the whole point of splitting these out
+        // is that a normal desktop is not marked down for being discoverable.
+        assert_eq!(Severity::Info.penalty(), 0);
     }
 
     #[test]
