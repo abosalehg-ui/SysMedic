@@ -7,8 +7,9 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-permissions:
-  contents: write
+# Scoped per job below rather than granted to the whole file: only the release
+# upload needs write, and the attestation needs its own two.
+permissions: {}
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,6 +18,10 @@ jobs:
   deb:
     name: Build .deb (+ AppDir)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # attach artifacts to the release
+      id-token: write # sign the provenance attestation
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install GTK4/libadwaita dev libraries
@@ -32,15 +37,30 @@ jobs:
         run: packaging/deb/build-deb.sh
       - name: Assemble AppDir
         run: packaging/appimage/build-appimage.sh || true
+      # This package installs two helpers that run as root through polkit, so
+      # whoever downloads it should be able to tell that what they got is what
+      # this workflow built. Checksums cover a corrupted or swapped file;
+      # the attestation ties the artifact to this repository, workflow and
+      # commit, and `gh attestation verify` checks it.
+      - name: Checksums
+        run: sha256sum sysmedic_*.deb | tee SHA256SUMS
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: sysmedic_*.deb
       - name: Upload .deb artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sysmedic-deb
-          path: sysmedic_*.deb
+          path: |
+            sysmedic_*.deb
+            SHA256SUMS
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          files: sysmedic_*.deb
+          files: |
+            sysmedic_*.deb
+            SHA256SUMS
           draft: true
           generate_release_notes: true

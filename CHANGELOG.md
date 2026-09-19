@@ -5,6 +5,47 @@
 
 ### Security
 
+- **Enabling the firewall no longer locks a remote administrator out.**
+  `fix.enable_ufw` ran `ufw --force enable` with ufw's default `deny incoming`
+  policy and nothing else. On a machine being administered over SSH — which
+  SysMedic can see, from the listening socket on 22/tcp and from the sshd
+  configuration it already parses — the current session survived on conntrack
+  while every *new* login was refused, and `undo`, the thing that would put it
+  right, needed the access that had just been removed. The plan now allows
+  `22/tcp` **before** it enables the firewall, says so in the consent preview,
+  names the ports that will start being blocked, and carries the rule into the
+  journal so `undo` removes exactly what was added (disabling first, so a
+  stale-rule failure cannot leave the firewall up).
+- **The ufw fix is no longer offered on firewalld machines.** `firewall_active()`
+  learned to read firewalld's unit state, but the answer it returned said
+  nothing about *which* front-end it described — so a Fedora/RHEL box with
+  firewalld installed and switched off produced a `Some(false)`, ufw-specific
+  rule text, and an "Enable the firewall" button that the user authorized with
+  their password and which then failed inside the privileged helper with
+  "failed to launch `ufw`". `SecurityInfo` now carries a `firewall_frontend`,
+  the fix requires ufw, and the rule names and suggests the front-end that is
+  actually installed.
+- **The privileged helper collects only what the fix needs.** It rebuilt the
+  whole snapshot as root — all sixteen collectors, including `smartctl`
+  opening every block device and the apt/dpkg/snap/flatpak parsers — to apply
+  a fix that reads one section. Each fix now declares `needs_collectors()` and
+  the helper builds the snapshot from those alone.
+- **Fix commands run non-interactively, and under a timeout.** `RealRunner`
+  had no time limit, an inherited stdin and no `DEBIAN_FRONTEND`, so a debconf
+  prompt nobody can see or a held dpkg lock hung the root helper forever with
+  the GUI's "Applying the fix…" toast still turning. Commands now get
+  `DEBIAN_FRONTEND=noninteractive`, a closed stdin, and a ten-minute ceiling.
+- **Release artifacts carry checksums and build provenance.** The `.deb`
+  installs two helpers that run as root; the release workflow published it
+  with neither. It now attaches `SHA256SUMS` and an
+  `actions/attest-build-provenance` attestation, and `contents: write` moved
+  from the whole file to the one job that needs it.
+- **The Flatpak manifest stops granting what it never uses.** `--share=network`
+  was permanent for an opt-in feature that also needs an API key, and
+  `--system-talk-name=org.freedesktop.PolicyKit1` authorized a pkexec call
+  that is never made from inside the sandbox. Both are gone; the README says
+  how to grant network per-install for `explain --deep`.
+
 - **The firewall check can finally fire.** `firewall_active()` could only ever
   return `Some(false)` from `ufw status`, which needs root — and both the
   `security.firewall_inactive` rule and `fix.enable_ufw` require exactly that
@@ -35,7 +76,66 @@
   to ask its version, and the output path is made absolute so it cannot be
   read as an option.
 
+### Changed
+
+- **Minimum supported Rust version is declared: 1.87.** The code has used
+  `u64::is_multiple_of` (1.87) and other recent std APIs for a while with no
+  `rust-version` in the manifest, so an older toolchain failed somewhere deep
+  in a dependency build instead of saying so up front. A CI job checks the
+  floor still compiles.
+- **`once_cell` is gone.** `LazyLock` has been in the standard library since
+  1.80, and the repository was using `once_cell::sync::Lazy` in two crates and
+  `std::sync::OnceLock` in a third — one fewer dependency, one pattern.
+
 ### Fixed
+
+- **`sysmedic undo` previews the journal the helper actually writes.** Every
+  fix applied through pkexec lands in `/var/lib/sysmedic/journal.json`, but
+  the preview read the per-user path that no privileged apply ever writes — so
+  it answered "Nothing to undo" and then `--yes`, which delegates to the
+  helper, went on to undo something. The journal is now `0644` in a `0755`
+  root-owned directory: it needs integrity, not secrecy, and the unprivileged
+  UI has to be able to read it.
+- **The GUI can undo a fix.** The confirmation dialog has always promised
+  "This fix can be undone"; the only way to act on it was to know
+  `sysmedic undo --yes` exists and open a terminal. There is now an
+  "Undo last fix…" menu entry (Ctrl+Z) that names the fix, confirms, and goes
+  through the same polkit-authorized helper.
+- **A failed fix says which of three things went wrong.** The GUI ran the
+  helper with `.status()`, threw its stderr away, and showed one sentence —
+  "Authorization was cancelled or failed, or the fix helper is not installed"
+  — whether the user had dismissed the password prompt, polkit had refused, or
+  `apt-get` had died on a held dpkg lock. It now distinguishes pkexec's 126
+  and 127 from a real helper failure and quotes the helper's last lines.
+- **`security.exposed_ports` stopped firing on every desktop.** Auditing UDP
+  was right, but it swept up the DHCP client socket (68/udp, 546/udp for v6)
+  and mDNS, so virtually every machine carried a permanent "2 services
+  listening on the network" finding and a standing 5-point deduction — the
+  kind of finding users learn to scroll past, which is what makes them miss it
+  on the day it names something real. Client sockets are no longer counted,
+  and discovery services (mDNS/Avahi, SSDP/UPnP) get their own `Info` finding,
+  `security.discovery_services`, which explains them and costs nothing.
+- **The whole terminal speaks the user's language.** `fix`, `undo`, `network`,
+  `monitor`, `history` and `schedule` printed English whatever the locale, so
+  an Arabic user got an Arabic window, an Arabic checkup, and then an English
+  `sysmedic fix`. All six now render from a bilingual table, and `--lang` is a
+  global flag accepted before or after any subcommand instead of a `checkup`
+  and `explain` privilege.
+- **The Markdown report localizes its severity badges.** `to_html` has used
+  `label_in` since badges were localized; `to_markdown` was missed, so an
+  Arabic report pasted into an issue carried `[CRITICAL]` above an Arabic
+  title.
+- **The score colour agrees with the grade beside it.** The colour bands
+  (75/50) were not the grade bands (75/60/40), so 55 read "Poor" in amber
+  while 60 read "Fair" in the same amber. A test now holds the two together
+  across every score.
+- **The disk page names the folder it is scanning.** It said "Scanning your
+  home folder…" after the user had picked a different one, and appended a bare
+  entry count with no unit.
+- **`sysmedic network` no longer claims to list TCP ports only.** It has
+  audited UDP since the sweep was widened.
+- **The trend strip is translated.** `(+5 since first)` sat untranslated under
+  an Arabic score.
 
 - **A mounted ISO no longer tanks the health score.** `iso9660`, `udf` and
   `erofs` are read-only images that are 100% full by construction; they were

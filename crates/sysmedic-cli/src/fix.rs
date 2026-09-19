@@ -12,7 +12,9 @@ use owo_colors::{OwoColorize, Stream};
 use sysmedic_core::{Lang, Snapshot};
 use sysmedic_fixes::{self as fixes, Journal, RealRunner};
 
-/// Resolve the journal path, or explain why there isn't one.
+use crate::text::tools;
+
+/// The journal this process may write (root only, in practice).
 fn journal() -> Result<Journal> {
     let path = fixes::journal_path().ok_or_else(|| {
         anyhow::anyhow!("no journal location: neither HOME nor XDG_STATE_HOME is set")
@@ -20,8 +22,17 @@ fn journal() -> Result<Journal> {
     Ok(Journal::load(path)?)
 }
 
-fn user_lang() -> Lang {
-    Lang::from_env()
+/// The journal to *read* for a preview.
+///
+/// Fixes applied through pkexec land in the system journal, because the helper
+/// that applied them was root. Previewing through the writable path sent an
+/// unprivileged `sysmedic undo` to the per-user file nothing ever writes, so it
+/// answered "Nothing to undo" and then `--yes` went on to undo something.
+fn readable_journal() -> Result<Journal> {
+    let path = fixes::journal_read_path().ok_or_else(|| {
+        anyhow::anyhow!("no journal location: neither HOME nor XDG_STATE_HOME is set")
+    })?;
+    Ok(Journal::load(path)?)
 }
 
 fn collect() -> Snapshot {
@@ -29,26 +40,25 @@ fn collect() -> Snapshot {
 }
 
 /// `sysmedic fix` with no id: list every fix that applies right now.
-pub fn list() -> Result<()> {
+pub fn list(lang: Lang) -> Result<()> {
+    let t = tools(lang);
     let snapshot = collect();
     let plans = fixes::applicable_plans(&snapshot);
     if plans.is_empty() {
         println!(
             "{}",
-            "No fixes needed — nothing to prescribe."
-                .if_supports_color(Stream::Stdout, |t| t.green())
+            t.no_fixes.if_supports_color(Stream::Stdout, |t| t.green())
         );
         return Ok(());
     }
-    let lang = user_lang();
-    println!("Applicable fixes (run `sysmedic fix <id> --dry-run` to preview):\n");
+    println!("{}\n", t.applicable_fixes);
     for plan in plans {
         let rev = if plan.reversible {
-            "reversible"
+            t.reversible
                 .if_supports_color(Stream::Stdout, |t| t.green())
                 .to_string()
         } else {
-            "not reversible"
+            t.not_reversible
                 .if_supports_color(Stream::Stdout, |t| t.yellow())
                 .to_string()
         };
@@ -63,26 +73,29 @@ pub fn list() -> Result<()> {
 }
 
 /// `sysmedic fix <id>`: preview, then (with `--yes`) apply.
-pub fn apply(id: &str, dry_run: bool, yes: bool) -> Result<()> {
+pub fn apply(id: &str, dry_run: bool, yes: bool, lang: Lang) -> Result<()> {
+    let t = tools(lang);
     let snapshot = collect();
     let Some(plan) = fixes::plan(id, &snapshot) else {
         bail!("fix '{id}' is unknown or not applicable right now (see `sysmedic fix`)");
     };
 
     // The consent preview follows the user's locale, like the knowledge base.
-    println!("{}", plan.preview_in(user_lang()));
+    println!("{}", plan.preview_in(lang));
 
     if dry_run {
         println!(
             "{}",
-            "(dry run — nothing was changed)".if_supports_color(Stream::Stdout, |t| t.dimmed())
+            t.dry_run_note
+                .if_supports_color(Stream::Stdout, |t| t.dimmed())
         );
         return Ok(());
     }
     if !yes {
         println!(
             "{}",
-            "Re-run with --yes to apply this fix.".if_supports_color(Stream::Stdout, |t| t.cyan())
+            t.rerun_to_apply
+                .if_supports_color(Stream::Stdout, |t| t.cyan())
         );
         return Ok(());
     }
@@ -91,8 +104,9 @@ pub fn apply(id: &str, dry_run: bool, yes: bool) -> Result<()> {
         let mut journal = journal()?;
         let outcome = fixes::apply(&plan, &RealRunner, &mut journal)?;
         println!(
-            "{} applied {}.",
+            "{} {} {}.",
             "✓".if_supports_color(Stream::Stdout, |t| t.green()),
+            t.applied,
             outcome
                 .fix_id
                 .if_supports_color(Stream::Stdout, |t| t.bold())
@@ -109,61 +123,67 @@ pub fn apply(id: &str, dry_run: bool, yes: bool) -> Result<()> {
         // whether this fix can be undone.
         let helper =
             fixes::helper_for_fix(id).ok_or_else(|| anyhow::anyhow!("fix '{id}' is unknown"))?;
-        delegate(&helper, &["apply", id])
+        delegate(&helper, &["apply", id], lang)
     }
 }
 
 /// `sysmedic undo`: revert the most recent reversible fix.
-pub fn undo(yes: bool) -> Result<()> {
+pub fn undo(yes: bool, lang: Lang) -> Result<()> {
+    let t = tools(lang);
     if !yes {
-        // Preview what would be undone from the journal we can read.
-        match journal() {
+        // Preview from the journal the *helper* writes, not the one this
+        // unprivileged process could write.
+        match readable_journal() {
             Ok(journal) => match journal.last_undoable() {
                 Some((_, entry)) => {
-                    let title = fixes::undo_title_in(&journal, user_lang())
-                        .unwrap_or_else(|| entry.title.clone());
+                    let title =
+                        fixes::undo_title_in(&journal, lang).unwrap_or_else(|| entry.title.clone());
                     println!(
-                        "Would undo: {} ({})",
+                        "{} {} ({})",
+                        t.would_undo,
                         title.if_supports_color(Stream::Stdout, |t| t.bold()),
                         entry.fix_id
                     );
                     println!(
                         "{}",
-                        "Re-run with --yes to undo."
+                        t.rerun_to_undo
                             .if_supports_color(Stream::Stdout, |t| t.cyan())
                     );
                 }
                 None => println!(
                     "{}",
-                    "Nothing to undo.".if_supports_color(Stream::Stdout, |t| t.green())
+                    t.nothing_to_undo
+                        .if_supports_color(Stream::Stdout, |t| t.green())
                 ),
             },
-            Err(e) => println!("(cannot read journal: {e})"),
+            Err(e) => println!("{} {e})", t.cannot_read_journal),
         }
         return Ok(());
     }
 
     if fixes::is_root() {
         let mut journal = journal()?;
-        let title = fixes::undo(&RealRunner, &mut journal, user_lang())?;
+        let title = fixes::undo(&RealRunner, &mut journal, lang)?;
         println!(
-            "{} reverted {}.",
+            "{} {} {}.",
             "✓".if_supports_color(Stream::Stdout, |t| t.green()),
+            t.reverted,
             title.if_supports_color(Stream::Stdout, |t| t.bold())
         );
         Ok(())
     } else {
-        delegate(&fixes::undo_helper(), &["undo"])
+        delegate(&fixes::undo_helper(), &["undo"], lang)
     }
 }
 
 /// Replace this process with `pkexec <helper> <args...>` so polkit authorizes
 /// the privileged step. Never returns on success.
-fn delegate(helper: &str, args: &[&str]) -> Result<()> {
+fn delegate(helper: &str, args: &[&str], lang: Lang) -> Result<()> {
     eprintln!(
         "{}",
         format!(
-            "Requesting authorization (pkexec {helper} {})…",
+            "{} (pkexec {helper} {})…",
+            tools(lang).requesting_auth,
             args.join(" ")
         )
         .dimmed()

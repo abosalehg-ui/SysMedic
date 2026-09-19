@@ -83,6 +83,28 @@ jobs:
           dpkg-deb --contents sysmedic_*.deb | grep -q usr/libexec/sysmedic-fix-helper$
           dpkg-deb --contents sysmedic_*.deb | grep -q usr/libexec/sysmedic-fix-helper-destructive
 
+  # The declared MSRV is a promise; check it. `rust-version` in Cargo.toml makes
+  # cargo refuse an older toolchain, but nothing verified that the number is
+  # still true after a dependency bump or a newly used std API.
+  msrv:
+    name: Minimum supported Rust version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install GTK4/libadwaita dev libraries
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
+      - name: Read the MSRV from Cargo.toml
+        id: msrv
+        run: echo "version=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+      # `check`, not `test`: this gate is about the toolchain floor compiling
+      # the workspace, and the stable job above already runs the suite.
+      - name: Check
+        run: cargo check --workspace --all-targets --locked
+
   # Fail the build on known RUSTSEC advisories in Cargo.lock. Dependabot keeps
   # dependencies fresh; this gate catches an advisory landing between updates —
   # which matters for a binary that runs privileged fixes.

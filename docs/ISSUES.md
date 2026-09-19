@@ -4,7 +4,7 @@ The GitHub issue list, grouped by milestone. Items marked ✅ shipped with the
 initial M0/M1 increment; the rest are open work.
 
 ## M0 — Foundation
-1. ✅ Scaffold cargo workspace (9 crates, Clean Architecture layout)
+1. ✅ Scaffold cargo workspace (11 crates, Clean Architecture layout)
 2. ✅ CI: fmt + clippy (-D warnings) + tests + release build + smoke run
 3. ✅ Docs: vision, competitive analysis, architecture, roadmap
 4. ✅ License (GPL-3.0) + contributing guide
@@ -18,7 +18,7 @@ initial M0/M1 increment; the rest are open work.
 9. ✅ Collectors: packages (dpkg audit, old kernels, apt cache, upgradable/
    security), journal & /var/log sizes, network (route/DNS), security
    (ufw, sshd PermitRootLogin), battery health, snap revisions
-10. ✅ 29 diagnostic rules with stable finding ids + fixture tests
+10. ✅ 30 diagnostic rules with stable finding ids + fixture tests
 11. ✅ Bilingual knowledge base (en/ar) + coverage test
 12. ✅ CLI: `checkup` (text/json/markdown/html, --output, --lang), `checks`,
     `explain`

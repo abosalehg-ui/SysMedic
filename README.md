@@ -44,7 +44,7 @@ of a doctor's visit:
 | Step | What you get |
 |---|---|
 | **Checkup** | One command scans CPU, RAM, swap, disks, thermal, battery, services, processes, boot, logs, packages, network and security → a 0–100 health score |
-| **Diagnose** | 29 rules: slow boot, full disks, zombie processes, overheating, failed services, broken/old packages, huge logs, snap bloat, DNS issues, SSH root login, inactive firewall... |
+| **Diagnose** | 30 rules: slow boot, full disks, zombie processes, overheating, failed services, broken/old packages, huge logs, snap bloat, DNS issues, SSH root login, inactive firewall... |
 | **Explain** | Every finding answers, offline and in English + العربية: what caused it? is it dangerous? what's the impact? how do I fix it? what if I ignore it? |
 | **Prescribe** | One-click safe fixes with a mandatory preview (what runs, which files change, is it reversible) and undo, authorized via polkit — the app never runs as root |
 | **Follow-up** | Scheduled checkups, proactive notifications and a health-score trend |
@@ -76,6 +76,10 @@ sysmedic disk ~                                           # largest folders
 sysmedic network                                          # route, DNS, ports
 ```
 
+`--lang en|ar` is global: it works before or after any subcommand, and every
+command honours it. Without it the language comes from `LC_ALL`, `LC_MESSAGES`
+or `LANG`, in that order.
+
 Requires Rust stable; runs on any modern Linux (Ubuntu/Debian gets the fullest
 coverage). Anything unavailable — no battery, no systemd in a container — is
 skipped gracefully and reported as a skipped check.
@@ -101,8 +105,12 @@ as root:
 sysmedic fix                                # list fixes that apply right now
 sysmedic fix fix.apt_clean --dry-run        # preview: commands, files, undo
 sysmedic fix fix.apt_clean --yes            # apply (root: direct; else pkexec)
+sysmedic undo                               # show what would be reverted
 sysmedic undo --yes                         # revert the last reversible fix
 ```
+
+The desktop app has the same undo, under **Undo last fix…** in the main menu
+(Ctrl+Z).
 
 Before anything changes you see exactly what will run, which paths it touches,
 its risk, and whether it can be undone. The GUI and CLI never run as root: the
@@ -115,6 +123,13 @@ each refuses the other's fixes. Every applied fix is recorded in a
 transaction journal (`/var/lib/sysmedic/journal.json`) that powers `undo`.
 Current fixes: clear APT cache, trim the journal, remove old kernels, reduce
 retained snap revisions, remove unused Flatpak runtimes, enable the firewall.
+
+A fix also may not leave the machine harder to reach than it found it: when
+SysMedic can see that this host answers on SSH, enabling the firewall allows
+`22/tcp` before it turns `deny incoming` on, names that in the preview, and
+takes the rule back out on undo. Each fix declares which parts of the system
+its plan reads, and the privileged helper collects only those — as root, it
+runs nothing the fix does not need.
 
 ## Follow-up: schedule, alerts, history, PDF (M5)
 
@@ -170,7 +185,7 @@ Created and maintained by **abosalehg-ui**.
 
 - Repository: <https://github.com/abosalehg-ui/SysMedic>
 - Issues: <https://github.com/abosalehg-ui/SysMedic/issues>
-- Contact: <abo.saleh.g@gmail.com>
+- Contact: <ar0.history@gmail.com>
 
 ---
 

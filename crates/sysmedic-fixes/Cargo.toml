@@ -3,6 +3,7 @@ name = "sysmedic-fixes"
 description = "Safe, previewable, undoable fixes for SysMedic with a transaction journal"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
@@ -12,7 +13,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 humantime = { workspace = true }
 thiserror = { workspace = true }
-once_cell = { workspace = true }
 libc = "0.2"
 
 [dev-dependencies]

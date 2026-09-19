@@ -365,19 +365,21 @@
     risk_if_ignored: "هجمات آلية مستمرة على أثمن حساب في النظام."
 
 - id: security.firewall_inactive
+  # {0} is the firewall front-end actually installed (ufw or firewalld); the
+  # rule fills it from the snapshot, so this text must not hardcode one.
   en:
-    cause: "ufw is installed but was never enabled (Ubuntu ships it disabled by default)."
+    cause: "A firewall front-end is installed but was never enabled (Ubuntu ships ufw disabled by default; a firewalld install can be switched off the same way)."
     dangerous: "Moderately — every listening service is reachable from the local network."
     impact: "On untrusted networks (cafés, airports), other devices can probe your open ports."
-    remedy: "Run sudo ufw enable — the default policy (deny incoming, allow outgoing) suits desktops with no extra rules."
+    remedy: "Enable it: sudo ufw enable on Debian/Ubuntu, or sudo systemctl enable --now firewalld on Fedora/RHEL. The default policy (deny incoming, allow outgoing) suits desktops with no extra rules. SysMedic's one-click fix also keeps SSH reachable when this machine is being administered remotely."
     risk_if_ignored: "Any vulnerable listening service is directly exposed to whoever shares your network."
   ar:
     title: "الجدار الناري مثبت لكنه غير مفعّل"
-    summary: "ufw موجود لكنه غير مفعّل؛ كل الخدمات المُنصتة مكشوفة للشبكة المحلية."
-    cause: "ufw مثبّت لكنه لم يُفعَّل قط (يأتي معطلًا افتراضيًا في Ubuntu)."
+    summary: "{0} موجود لكنه غير مفعّل؛ كل الخدمات المُنصتة مكشوفة للشبكة المحلية."
+    cause: "واجهة جدار ناري مثبّتة لكنها لم تُفعَّل قط (يأتي ufw معطلًا افتراضيًا في Ubuntu، وقد يكون firewalld مثبّتًا ومعطّلًا كذلك)."
     dangerous: "متوسطة — كل خدمة تستمع للشبكة متاحة من الشبكة المحلية."
     impact: "على الشبكات غير الموثوقة (مقاهٍ، مطارات) تستطيع الأجهزة الأخرى فحص منافذك المفتوحة."
-    remedy: "نفّذ sudo ufw enable — السياسة الافتراضية (منع الوارد، سماح الصادر) مناسبة لأجهزة سطح المكتب دون قواعد إضافية."
+    remedy: "فعّله: sudo ufw enable على Debian/Ubuntu، أو sudo systemctl enable --now firewalld على Fedora/RHEL. السياسة الافتراضية (منع الوارد، سماح الصادر) مناسبة لأجهزة سطح المكتب دون قواعد إضافية. وإصلاح SysMedic بنقرة واحدة يُبقي SSH متاحًا كذلك إن كان الجهاز يُدار عن بُعد."
     risk_if_ignored: "أي خدمة مستمعة فيها ثغرة تبقى مكشوفة مباشرة لمن يشاركك الشبكة."
 
 - id: security.ssh_password_auth
@@ -411,6 +413,22 @@
     impact: "تستطيع الأجهزة الأخرى على شبكتك الاتصال بهذه الخدمات مباشرة."
     remedy: "اربط الخدمات بـ 127.0.0.1 حيثما أمكن، وفعّل الجدار الناري (ufw) لضبط الباقي."
     risk_if_ignored: "أي ثغرة في خدمة مكشوفة تصبح في متناول كل من يشاركك الشبكة."
+
+- id: security.discovery_services
+  en:
+    cause: "A local-network discovery daemon is running — Avahi/mDNS answers on 5353, a UPnP/SSDP client or server on 1900. Desktop installs enable these so printers, scanners, shares and cast targets appear by themselves."
+    dangerous: "No by itself. It is reported for completeness, carries no score penalty, and is expected on a desktop."
+    impact: "This machine announces its name and services to everyone on the same local network."
+    remedy: "Nothing to do unless this machine should be invisible on its network — a server or a laptop on public Wi-Fi. Then: sudo systemctl disable --now avahi-daemon (and the equivalent for any UPnP client). Expect printer and share discovery to stop working."
+    risk_if_ignored: "Nothing accumulates; the only cost is that your hostname and service list are visible to the local network."
+  ar:
+    title: "{0} من خدمات اكتشاف الشبكة المحلية تعمل"
+    summary: "تستجيب هذه الخدمات على الشبكة المحلية بحكم تصميمها — بها تُكتشف الطابعات والمجلدات المشتركة وأجهزة العرض. لا شيء يُصلَح إلا إن أردت إخفاء هذا الجهاز."
+    cause: "خدمة اكتشاف على الشبكة المحلية تعمل — Avahi/mDNS تستجيب على 5353، وعميل أو خادم UPnP/SSDP على 1900. تفعّلها توزيعات سطح المكتب لتظهر الطابعات والماسحات والمجلدات المشتركة وأجهزة العرض تلقائيًا."
+    dangerous: "لا بذاتها. تُعرض للعلم فقط، ولا تخصم من الدرجة، ووجودها متوقّع على جهاز سطح مكتب."
+    impact: "يُعلن هذا الجهاز اسمه وخدماته لكل من يشاركه الشبكة المحلية."
+    remedy: "لا حاجة لإجراء إلا إن أردت ألا يظهر هذا الجهاز على شبكته — خادم أو حاسوب محمول على شبكة عامة. عندها: sudo systemctl disable --now avahi-daemon (وما يقابلها لعميل UPnP). توقّع أن يتوقف اكتشاف الطابعات والمجلدات المشتركة."
+    risk_if_ignored: "لا يتراكم منها ضرر؛ الكلفة الوحيدة أن اسم جهازك وقائمة خدماته مرئيان للشبكة المحلية."
 
 - id: smart.failing
   en:

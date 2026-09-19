@@ -3,6 +3,7 @@ name = "sysmedic-diskscan"
 description = "Directory size scanning and squarified-treemap layout for SysMedic's disk analyzer"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 

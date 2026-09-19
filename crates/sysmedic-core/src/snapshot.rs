@@ -260,10 +260,30 @@ pub struct NetworkInfo {
     pub dns_servers: Vec<String>,
 }
 
+/// Which firewall front-end the machine actually runs.
+///
+/// [`SecurityInfo::firewall_active`] says *whether* a firewall is on, never
+/// *which* one. That was enough while ufw was the only front-end understood,
+/// but once firewalld could answer too, a `Some(false)` on a Fedora/RHEL
+/// machine put ufw-specific rule text on screen and offered `fix.enable_ufw`
+/// on a system with no `ufw` binary — a fix the user authorized with their
+/// password and which could only fail inside the privileged helper.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FirewallFrontend {
+    Ufw,
+    Firewalld,
+}
+
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct SecurityInfo {
     /// `None` when no known firewall frontend could be queried.
     pub firewall_active: Option<bool>,
+    /// The front-end [`SecurityInfo::firewall_active`] describes. `None` means
+    /// no front-end SysMedic understands is installed (a hand-rolled nftables
+    /// ruleset, say), in which case no firewall finding or fix applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub firewall_frontend: Option<FirewallFrontend>,
     /// `None` when sshd is not installed / config unreadable.
     pub ssh_permit_root_login: Option<bool>,
     /// Effective `PasswordAuthentication`; `None` when sshd absent/unreadable.

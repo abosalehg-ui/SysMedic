@@ -37,9 +37,28 @@ use sysmedic_fixes::{
     SYSTEM_JOURNAL,
 };
 
-fn snapshot() -> sysmedic_core::Snapshot {
-    // Collection only — the helper needs no diagnostics to rebuild a plan.
-    sysmedic_collectors::default_snapshot()
+/// Collect **only** what `fix_id` needs, as root.
+///
+/// The helper used to call `default_snapshot()`, which runs all sixteen
+/// collectors: `smartctl` opening every block device, apt/dpkg/snap/flatpak
+/// parsing data that came off the network, `systemd-analyze`, a walk of
+/// `/var/log`. All of it as root, all of it to apply one fix that reads one
+/// section — and all of it between the user's password and anything visible
+/// happening. Each fix declares what its plan reads (`Fix::needs_collectors`),
+/// and this builds the snapshot from that alone.
+///
+/// Collection only — the helper needs no diagnostics to rebuild a plan.
+fn snapshot_for(fix_id: &str) -> sysmedic_core::Snapshot {
+    let needed = sysmedic_fixes::collectors_for(fix_id).unwrap_or(&[]);
+    let collectors: Vec<Box<dyn sysmedic_core::Collector>> =
+        sysmedic_collectors::default_collectors()
+            .into_iter()
+            .filter(|c| needed.contains(&c.name()))
+            .collect();
+    sysmedic_core::Engine::new()
+        .with_collectors(collectors)
+        .run()
+        .snapshot
 }
 
 fn open_journal() -> Result<Journal, String> {
@@ -102,7 +121,7 @@ fn run(tier: FixTier) -> Result<String, String> {
     let runner: &dyn CommandRunner = &RealRunner;
     match parse_action(tier, &args)? {
         Action::Apply(fix_id) => {
-            let snapshot = snapshot();
+            let snapshot = snapshot_for(&fix_id);
             let plan = plan(&fix_id, &snapshot)
                 .ok_or_else(|| format!("fix '{fix_id}' is unknown or not applicable right now"))?;
             let mut journal = open_journal()?;
@@ -178,6 +197,43 @@ pub fn main_for(tier: FixTier) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fix_collector_names_are_real() {
+        // `needs_collectors` is a list of strings matched against
+        // `Collector::name()`. A typo there would silently collect nothing,
+        // the plan would be built from an empty snapshot, and the fix would
+        // report "not applicable right now" — after the user authenticated.
+        let known: Vec<&str> = sysmedic_collectors::default_collectors()
+            .iter()
+            .map(|c| c.name())
+            .collect();
+        for fix_id in sysmedic_fixes::fix_ids() {
+            let needed = sysmedic_fixes::collectors_for(fix_id).expect("known fix id");
+            assert!(!needed.is_empty(), "{fix_id} declares no collectors");
+            for name in needed {
+                assert!(
+                    known.contains(name),
+                    "{fix_id} needs collector {name:?}, which does not exist"
+                );
+            }
+        }
+        assert!(sysmedic_fixes::collectors_for("fix.nope").is_none());
+    }
+
+    #[test]
+    fn the_helper_collects_less_than_everything() {
+        // The point of the narrowing: no fix may quietly pull the whole set
+        // back in and run it as root.
+        let all = sysmedic_collectors::default_collectors().len();
+        for fix_id in sysmedic_fixes::fix_ids() {
+            let needed = sysmedic_fixes::collectors_for(fix_id).unwrap().len();
+            assert!(
+                needed < all,
+                "{fix_id} still asks for every collector ({needed}/{all})"
+            );
+        }
+    }
 
     fn args(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()

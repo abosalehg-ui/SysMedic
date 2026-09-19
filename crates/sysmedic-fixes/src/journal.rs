@@ -154,15 +154,26 @@ impl Journal {
         };
         let dir = self.path.parent().unwrap_or_else(|| Path::new("."));
         std::fs::create_dir_all(dir).map_err(io(dir))?;
-        // Lock the state directory down to its owner. For the privileged
-        // helper this is `/var/lib/sysmedic`, owned by root — so an
-        // unprivileged user cannot plant or rewrite `journal.json`, whose
-        // contents drive `undo` as root. Best-effort on exotic filesystems.
-        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+        // What this file needs is **integrity, not secrecy**, and the two pull
+        // in opposite directions here.
+        //
+        // Integrity: only root may write it. For the privileged helper the
+        // directory is `/var/lib/sysmedic`, owned by root, so 0755 already
+        // means no unprivileged user can plant or rewrite `journal.json` —
+        // and `undo` ignores the commands stored in it anyway, rebuilding them
+        // from the compiled-in registry, with the one value it does read
+        // (`restore`) validated by the fix before use.
+        //
+        // Secrecy bought nothing: the contents are fix ids, timestamps and a
+        // snapd retention count. But 0700/0600 meant the unprivileged GUI and
+        // CLI could not read the journal the helper writes, so `sysmedic undo`
+        // previewed "Nothing to undo" for fixes that were sitting in it, and
+        // the GUI could offer no undo at all.
+        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755));
 
         let json = serde_json::to_string_pretty(&self.entries).expect("entries serialize");
 
-        // Write to a sibling temp file with 0600 and O_NOFOLLOW, then rename
+        // Write to a sibling temp file with 0644 and O_NOFOLLOW, then rename
         // into place. The rename is atomic (readers never see a half-written
         // journal) and O_NOFOLLOW refuses a pre-planted symlink at the temp
         // path, closing the TOCTOU/symlink-overwrite window.
@@ -171,7 +182,7 @@ impl Journal {
             .write(true)
             .create(true)
             .truncate(true)
-            .mode(0o600)
+            .mode(0o644)
             .custom_flags(libc::O_NOFOLLOW)
             .open(&tmp)
             .map_err(io(&tmp))?;
@@ -183,7 +194,13 @@ impl Journal {
                 path: self.path.clone(),
                 source: e,
             }
-        })
+        })?;
+        // A journal written by an older version arrived here as 0600 and would
+        // keep it: the rename replaces the file, so the mode comes from the
+        // temp file — but say it explicitly rather than depend on that, the
+        // way `paths::write_private` does for the opposite direction.
+        let _ = std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o644));
+        Ok(())
     }
 }
 
@@ -237,6 +254,46 @@ mod tests {
         j.mark_undone(idx).unwrap();
         // Now nothing is left to undo.
         assert!(j.last_undoable().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_journal_is_readable_by_the_unprivileged_ui() {
+        // 0600/0700 made `sysmedic undo` and the GUI blind to every fix the
+        // privileged helper had applied. The file is owned by root in the real
+        // deployment; being world-*readable* is the point, not an oversight.
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sysmedic/journal.json");
+        let mut j = Journal::load(&path).unwrap();
+        j.record(entry("fix.enable_ufw", true)).unwrap();
+
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&path), 0o644, "journal is not readable by the UI");
+        assert_eq!(
+            mode(path.parent().unwrap()),
+            0o755,
+            "state dir is not traversable"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_existing_private_journal_is_opened_up_on_the_next_write() {
+        // Upgrading from a version that wrote 0600 must not leave the UI
+        // locked out of its own journal forever.
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("journal.json");
+        std::fs::write(&path, "[]").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        let mut j = Journal::load(&path).unwrap();
+        j.record(entry("fix.enable_ufw", true)).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
     }
 
     #[test]

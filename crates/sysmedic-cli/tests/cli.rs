@@ -173,6 +173,58 @@ fn exit_code_is_zero_by_default_and_opt_in_otherwise() {
 }
 
 #[test]
+fn the_secondary_commands_speak_the_requested_language() {
+    // `fix`, `undo`, `network`, `monitor`, `history` and `schedule` printed
+    // English whatever the locale — an Arabic user got an Arabic dashboard,
+    // an Arabic checkup, and then an English `sysmedic fix`.
+    let arabic = |s: &str| s.chars().any(|c| ('\u{0600}'..='\u{06FF}').contains(&c));
+
+    let en = stdout(&sysmedic(&["network", "--lang", "en"]));
+    assert!(en.contains("Listening ports"), "{en}");
+    // The sweep has audited UDP since it was widened; the message said TCP.
+    assert!(!en.contains("TCP ports"), "stale TCP-only wording: {en}");
+
+    let ar = stdout(&sysmedic(&["network", "--lang", "ar"]));
+    assert!(arabic(&ar), "network stayed English under --lang ar: {ar}");
+    assert!(!ar.contains("Listening ports"), "{ar}");
+
+    for command in [
+        vec!["fix", "--lang", "ar"],
+        vec!["undo", "--lang", "ar"],
+        vec!["history", "--lang", "ar"],
+        vec!["schedule", "status", "--lang", "ar"],
+    ] {
+        let out = sysmedic(&command);
+        assert!(out.status.success(), "{command:?} failed");
+        let text = stdout(&out);
+        assert!(
+            arabic(&text),
+            "`{}` printed no Arabic: {text}",
+            command.join(" ")
+        );
+    }
+}
+
+#[test]
+fn undo_previews_from_the_journal_the_helper_writes() {
+    // Whatever it finds, the preview must not claim there is nothing to undo
+    // because it looked in the wrong file: `--yes` delegates to the helper,
+    // which reads the system journal, so the preview has to read it too.
+    let out = sysmedic(&["undo", "--lang", "en"]);
+    assert!(out.status.success());
+    let text = stdout(&out);
+    assert!(
+        text.contains("Nothing to undo") || text.contains("Would undo"),
+        "unexpected undo preview: {text}"
+    );
+    // A preview must never apply anything.
+    assert!(
+        !text.contains("reverted"),
+        "the preview reverted a fix: {text}"
+    );
+}
+
+#[test]
 fn help_documents_every_subcommand() {
     let out = sysmedic(&["--help"]);
     assert!(out.status.success());

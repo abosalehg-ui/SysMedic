@@ -87,7 +87,7 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
     let heading = gtk::Label::new(Some(strings.disk_usage));
     heading.add_css_class("title-2");
     heading.set_xalign(0.0);
-    let subtitle = gtk::Label::new(Some(strings.disk_scanning));
+    let subtitle = gtk::Label::new(Some(strings.disk_pick_a_folder));
     subtitle.add_css_class("dim-label");
     subtitle.set_xalign(0.0);
     subtitle.set_wrap(true);
@@ -242,6 +242,21 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
     root.append(&list_heading);
     root.append(&list);
 
+    /// What the subtitle says while a scan runs.
+    ///
+    /// The label used to be a fixed "Scanning your home folder…", which stayed
+    /// on screen after the user picked a different folder — and the progress
+    /// counter appended a bare number to it ("…184320") with no unit.
+    fn scanning_label(lang: Lang, path: &std::path::Path, visited: u64) -> String {
+        let strings = Strings::for_lang(lang);
+        let head = format!("{} {}…", strings.disk_scanning_path, path.display());
+        if visited == 0 {
+            head
+        } else {
+            format!("{head} {visited} {}", strings.disk_entries)
+        }
+    }
+
     let start_scan: ScanFn = Rc::new({
         let tree = tree.clone();
         let area = area.clone();
@@ -255,7 +270,7 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
             let control = Arc::new(ScanControl::default());
             cancel.set_visible(true);
             progress.set_visible(true);
-            subtitle.set_text(strings.disk_scanning);
+            subtitle.set_text(&scanning_label(lang, &path, 0));
             list.set_visible(false);
             list_heading.set_visible(false);
             *selection.borrow_mut() = None;
@@ -272,6 +287,7 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
                 let control = control.clone();
                 let progress = progress.clone();
                 let subtitle = subtitle.clone();
+                let scanned_path = path.clone();
                 move || {
                     if !progress.is_visible() {
                         return glib::ControlFlow::Break;
@@ -279,7 +295,7 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
                     progress.pulse();
                     let n = control.visited.load(Ordering::Relaxed);
                     if n > 0 {
-                        subtitle.set_text(&format!("{} {n}", strings.disk_scanning));
+                        subtitle.set_text(&scanning_label(lang, &scanned_path, n));
                     }
                     glib::ControlFlow::Continue
                 }
