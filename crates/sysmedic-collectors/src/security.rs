@@ -22,8 +22,46 @@ impl Collector for SecurityCollector {
             ssh_password_auth: sshd
                 .as_deref()
                 .and_then(|c| parse_directive_bool(c, "PasswordAuthentication")),
+            ssh_ports: sshd.as_deref().map(parse_ssh_ports).unwrap_or_default(),
         });
     }
+}
+
+/// sshd's default listening port, used when the configuration sets none.
+pub const SSHD_DEFAULT_PORT: u16 = 22;
+
+/// Every port sshd listens on, from the `Port` directives of its config.
+///
+/// sshd accepts more than one `Port` line and listens on all of them; with
+/// none it uses 22. Directives inside a `Match` block are conditional and are
+/// not read (see [`parse_directive_bool`]). Returns ports sorted and
+/// de-duplicated; a value that is not a valid port number is skipped.
+pub fn parse_ssh_ports(config: &str) -> Vec<u16> {
+    let mut ports: Vec<u16> = Vec::new();
+    for line in config.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let mut toks = line.split_whitespace();
+        let key = toks.next().unwrap_or("");
+        if key.eq_ignore_ascii_case("match") {
+            break;
+        }
+        if key.eq_ignore_ascii_case("port") {
+            if let Some(port) = toks.next().and_then(|v| v.parse::<u16>().ok()) {
+                if port != 0 {
+                    ports.push(port);
+                }
+            }
+        }
+    }
+    if ports.is_empty() {
+        ports.push(SSHD_DEFAULT_PORT);
+    }
+    ports.sort_unstable();
+    ports.dedup();
+    ports
 }
 
 /// Read `/etc/ssh/sshd_config` and splice in any `Include`d drop-in files at the
@@ -282,6 +320,30 @@ mod tests {
         assert_eq!(parse_ufw_conf("LOGLEVEL=low\n"), None);
         assert_eq!(parse_ufw_conf("#ENABLED=yes\n"), None);
         assert_eq!(parse_ufw_conf(""), None);
+    }
+
+    #[test]
+    fn ssh_ports_default_to_22_when_unset() {
+        assert_eq!(parse_ssh_ports("PermitRootLogin no\n"), vec![22]);
+        assert_eq!(parse_ssh_ports(""), vec![22]);
+        // A commented-out Port (Debian's stock file) is not a setting.
+        assert_eq!(parse_ssh_ports("#Port 22\n"), vec![22]);
+    }
+
+    #[test]
+    fn ssh_ports_follow_every_port_directive() {
+        // The hardening case the firewall fix must respect: sshd moved off 22.
+        assert_eq!(parse_ssh_ports("Port 2222\n"), vec![2222]);
+        // sshd listens on every Port line; order and duplicates are normalized.
+        assert_eq!(
+            parse_ssh_ports("Port 2222\nport 22\nPort 2222\n"),
+            vec![22, 2222]
+        );
+        // Garbage and port 0 are skipped, and a Match block is not read.
+        assert_eq!(
+            parse_ssh_ports("Port abc\nPort 0\nPort 2200\nMatch User x\n  Port 9\n"),
+            vec![2200]
+        );
     }
 
     #[test]

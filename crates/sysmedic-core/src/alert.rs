@@ -56,24 +56,28 @@ pub fn evaluate_in(snapshot: &Snapshot, lang: Lang) -> Vec<Alert> {
     }
 
     if let Some(thermal) = &snapshot.thermal {
-        if let Some(hottest) = thermal.hottest() {
-            if hottest.temp_c >= thresholds::thermal::HIGH_C {
+        // Each sensor against its own limit (a GPU hotspot's 110 °C, an
+        // NVMe's vendor threshold), not the hottest against one fixed number.
+        if let Some((sensor, severity)) = thermal.worst() {
+            if severity >= Severity::High {
+                let (_, limit) = sensor.limits();
                 alerts.push(Alert {
                     id: "alert.overheating",
-                    urgency: if hottest.temp_c >= thresholds::thermal::CRITICAL_C {
-                        Severity::Critical
-                    } else {
-                        Severity::High
-                    },
+                    urgency: severity,
                     title: match lang {
                         Lang::En => "System overheating".to_string(),
                         Lang::Ar => "ارتفاع حرارة النظام".to_string(),
                     },
                     body: match lang {
-                        Lang::En => format!("{} at {:.0}°C", hottest.name, hottest.temp_c),
-                        Lang::Ar => {
-                            format!("{} عند {:.0}°م", hottest.name, hottest.temp_c)
-                        }
+                        Lang::En => format!(
+                            "{} at {:.0}°C (limit {limit:.0}°C)",
+                            sensor.name, sensor.temp_c
+                        ),
+                        Lang::Ar => format!(
+                            "{} عند {:.0}°م (الحدّ {limit:.0}°م)",
+                            crate::lang::isolate(&sensor.name),
+                            sensor.temp_c
+                        ),
                     },
                 });
             }
@@ -186,6 +190,7 @@ mod tests {
                 sensors: vec![ThermalSensor {
                     name: "pkg".into(),
                     temp_c: 99.0, // Critical
+                    ..Default::default()
                 }],
             }),
             ..Default::default()

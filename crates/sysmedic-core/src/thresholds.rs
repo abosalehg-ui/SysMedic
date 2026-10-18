@@ -26,12 +26,19 @@ pub mod memory {
     pub const CRITICAL_PCT: f64 = 5.0;
 }
 
-/// Temperature (°C) of the hottest sensor.
+/// Temperature (°C) thresholds for sensors that publish no limit of their
+/// own. A sensor with a `temp*_crit` / `temp*_max` (or a critical trip point)
+/// is judged against that instead — see `ThermalSensor::limits`.
 pub mod thermal {
     /// At/above this, overheating is flagged High (and a proactive alert).
     pub const HIGH_C: f64 = 85.0;
     /// At/above this, it is Critical.
     pub const CRITICAL_C: f64 = 95.0;
+    /// For a sensor with its own critical limit and no lower warning limit,
+    /// High starts this many degrees below the critical limit. Ten degrees
+    /// is the gap between the fixed pair above for a 95 °C limit, and keeps
+    /// a 110 °C GPU hotspot quiet until 100.
+    pub const HIGH_MARGIN_C: f64 = 10.0;
 }
 
 /// Boot time (seconds, from `systemd-analyze time`).

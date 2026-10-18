@@ -153,10 +153,67 @@ impl DiskInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct ThermalSensor {
     pub name: String,
     pub temp_c: f64,
+    /// The sensor's own critical limit (`temp*_crit` in hwmon, the `critical`
+    /// trip point of a thermal zone), when the driver publishes one.
+    ///
+    /// One fixed threshold for every sensor is wrong for most of them: a
+    /// GPU hotspot (`amdgpu` junction) runs at 95–105 °C by design with a
+    /// limit of 110, while an NVMe drive is in trouble well before 95. The
+    /// old 85/95 °C cut-offs turned a gaming laptop under load into a
+    /// Critical "overheating" finding that capped the whole score at 59 and
+    /// sent a critical desktop notification on every scheduled run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crit_c: Option<f64>,
+    /// The sensor's warning limit (`temp*_max`), when published and below
+    /// [`ThermalSensor::crit_c`]; NVMe exposes its vendor warning threshold
+    /// here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_c: Option<f64>,
+}
+
+impl ThermalSensor {
+    /// How worrying this reading is, judged against the sensor's own limits
+    /// when it has them and against the fixed thresholds in
+    /// [`crate::thresholds::thermal`] otherwise.
+    ///
+    /// With a critical limit: `High` from [`crate::thresholds::thermal::HIGH_MARGIN_C`]
+    /// below it (or from the warning limit, when that is lower), `Critical`
+    /// at the limit itself.
+    pub fn severity(&self) -> Option<crate::finding::Severity> {
+        use crate::finding::Severity;
+        let (high, critical) = self.limits();
+        if self.temp_c >= critical {
+            Some(Severity::Critical)
+        } else if self.temp_c >= high {
+            Some(Severity::High)
+        } else {
+            None
+        }
+    }
+
+    /// The (high, critical) thresholds that apply to this sensor.
+    pub fn limits(&self) -> (f64, f64) {
+        use crate::thresholds::thermal as th;
+        let plausible = |v: Option<f64>| v.filter(|&v| v > 0.0 && v < 200.0);
+        match (plausible(self.max_c), plausible(self.crit_c)) {
+            (max, Some(crit)) => {
+                let high = match max {
+                    Some(max) if max < crit => max,
+                    _ => crit - th::HIGH_MARGIN_C,
+                };
+                (high, crit)
+            }
+            // Only a warning limit: that is where High starts; Critical stays
+            // at the fixed cut-off (or just above the warning if that is
+            // higher still).
+            (Some(max), None) => (max, max.max(th::CRITICAL_C)),
+            (None, None) => (th::HIGH_C, th::CRITICAL_C),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -169,6 +226,22 @@ impl ThermalInfo {
         self.sensors
             .iter()
             .max_by(|a, b| a.temp_c.total_cmp(&b.temp_c))
+    }
+
+    /// The sensor in the worst state, judged by its own limits, with that
+    /// state. `None` when every sensor is within its limits.
+    ///
+    /// Replaces "the hottest sensor against one fixed threshold": the
+    /// hottest reading on a machine is routinely a GPU hotspot that is
+    /// nowhere near its limit, while a cooler NVMe drive may be past its own.
+    pub fn worst(&self) -> Option<(&ThermalSensor, crate::finding::Severity)> {
+        self.sensors
+            .iter()
+            .filter_map(|s| s.severity().map(|sev| (s, sev)))
+            .max_by(|a, b| {
+                a.1.cmp(&b.1)
+                    .then_with(|| a.0.temp_c.total_cmp(&b.0.temp_c))
+            })
     }
 }
 
@@ -288,6 +361,16 @@ pub struct SecurityInfo {
     pub ssh_permit_root_login: Option<bool>,
     /// Effective `PasswordAuthentication`; `None` when sshd absent/unreadable.
     pub ssh_password_auth: Option<bool>,
+    /// The TCP ports sshd is configured to listen on (every `Port` directive,
+    /// or 22 when none is set). Empty when no `sshd_config` could be read,
+    /// which means no SSH server is installed.
+    ///
+    /// Needed because "SSH reachable" used to mean "something listens on 22":
+    /// moving sshd to another port is one of the most common hardening
+    /// steps, and a firewall fix that only allowed 22 locked those machines
+    /// out while its preview promised the opposite.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ssh_ports: Vec<u16>,
 }
 
 /// One disk's SMART health, as reported by `smartctl`.
@@ -325,7 +408,18 @@ pub struct BatteryInfo {
 
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct SnapInfo {
+    /// Every disabled (old) revision kept on disk, across all snaps.
     pub disabled_revisions: u32,
+    /// Disabled revisions beyond the one rollback copy per snap that
+    /// `refresh.retain=2` — the value `fix.snap_retain` sets — keeps anyway.
+    ///
+    /// This is what the finding and the fix are about. Counting every
+    /// disabled revision meant the finding never cleared and the fix stayed
+    /// on offer forever: with retain=2 each refreshed snap still holds one
+    /// disabled revision, so `disabled_revisions > 0` was true on every
+    /// Ubuntu machine, including right after the fix had been applied.
+    #[serde(default)]
+    pub excess_revisions: u32,
     pub snaps_dir_bytes: Option<u64>,
     /// The system's current `refresh.retain` setting, so undoing
     /// `fix.snap_retain` can restore the user's value instead of assuming

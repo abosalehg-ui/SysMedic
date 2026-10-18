@@ -136,33 +136,40 @@ pub mod cpu {
 }
 
 pub mod thermal {
-    use sysmedic_core::thresholds::thermal as thermal_th;
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
+    /// A sensor past its own limits.
+    ///
+    /// Each sensor is judged against the limit its driver publishes
+    /// (`ThermalSensor::limits`), not the hottest reading against one fixed
+    /// number: a GPU hotspot at 100 °C with a 110 °C limit is High, not the
+    /// Critical that capped the score at 59 and sent a daily alert; an NVMe
+    /// at its vendor warning threshold is High even though it is "only" 80.
     pub fn overheating(s: &Snapshot) -> Vec<Finding> {
         let Some(thermal) = &s.thermal else {
             return vec![];
         };
-        let Some(hottest) = thermal.hottest() else {
+        let Some((sensor, severity)) = thermal.worst() else {
             return vec![];
         };
-        let severity = if hottest.temp_c >= thermal_th::CRITICAL_C {
-            Severity::Critical
-        } else if hottest.temp_c >= thermal_th::HIGH_C {
-            Severity::High
-        } else {
+        if severity < Severity::High {
             return vec![];
-        };
+        }
+        let (_, limit) = sensor.limits();
         vec![Finding::new(
             "thermal.overheating",
             Category::Thermal,
             severity,
-            format!("Sensor {} reads {:.0}°C", hottest.name, hottest.temp_c),
+            format!(
+                "Sensor {} reads {:.0}°C (limit {limit:.0}°C)",
+                sensor.name, sensor.temp_c
+            ),
             "The system is running hot; sustained high temperatures throttle performance and shorten hardware life.",
         )
         .with_args(vec![
-            hottest.name.clone(),
-            format!("{:.0}", hottest.temp_c),
+            sensor.name.clone(),
+            format!("{:.0}", sensor.temp_c),
+            format!("{limit:.0}"),
         ])]
     }
 }
@@ -197,6 +204,36 @@ pub mod processes {
 pub mod services {
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
+    /// Units whose failure is routine noise on Ubuntu rather than a sign that
+    /// something the user relies on is broken: periodic refreshers that fail
+    /// without a network or a subscription, and snap hooks.
+    const NOISY_UNITS: &[&str] = &[
+        "fwupd-refresh.service",
+        "apt-news.service",
+        "esm-cache.service",
+        "ua-timer.service",
+        "motd-news.service",
+    ];
+
+    fn is_noisy(unit: &str) -> bool {
+        NOISY_UNITS.contains(&unit) || unit.starts_with("snap.")
+    }
+
+    /// How serious a set of failed units is.
+    ///
+    /// `High` for any count meant one `fwupd-refresh.service` failure — which
+    /// happens on most Ubuntu installs — capped the whole machine at 74
+    /// "Fair". Known-noisy units alone are `Low`; one or two real failures
+    /// are `Medium`; three or more are `High`.
+    pub fn severity_for(failed: &[String]) -> Severity {
+        let real = failed.iter().filter(|u| !is_noisy(u)).count();
+        match real {
+            0 => Severity::Low,
+            1 | 2 => Severity::Medium,
+            _ => Severity::High,
+        }
+    }
+
     pub fn failed_units(s: &Snapshot) -> Vec<Finding> {
         let Some(services) = &s.services else {
             return vec![];
@@ -207,7 +244,7 @@ pub mod services {
         vec![Finding::new(
             "services.failed",
             Category::Services,
-            Severity::High,
+            severity_for(&services.failed),
             format!("{} systemd unit(s) in failed state", services.failed.len()),
             "Failed units mean something the system was asked to run is broken.",
         )
@@ -495,9 +532,13 @@ pub mod snap {
     use super::gb;
     use sysmedic_core::{Category, Finding, Severity, Snapshot};
 
+    /// Old snap revisions beyond the one rollback copy snapd keeps at
+    /// `refresh.retain=2`. Counting *every* disabled revision made this fire
+    /// on every Ubuntu machine forever, including right after
+    /// `fix.snap_retain` had been applied.
     pub fn old_revisions(s: &Snapshot) -> Vec<Finding> {
         let Some(snap) = &s.snap else { return vec![] };
-        if snap.disabled_revisions == 0 {
+        if snap.excess_revisions == 0 {
             return vec![];
         }
         let size_note = snap
@@ -509,13 +550,16 @@ pub mod snap {
             Category::Storage,
             Severity::Low,
             format!(
-                "{} disabled snap revision(s) kept on disk",
-                snap.disabled_revisions
+                "{} old snap revision(s) beyond the rollback copy kept on disk",
+                snap.excess_revisions
             ),
-            format!("Snapd keeps old revisions of every snap after updates.{size_note}"),
+            format!(
+                "Snapd keeps old revisions of every snap after updates; one per snap is a \
+                 rollback, the rest is wasted space.{size_note}"
+            ),
         )
         .with_fix_hint("sudo snap set system refresh.retain=2")
-        .with_args(vec![snap.disabled_revisions.to_string()])]
+        .with_args(vec![snap.excess_revisions.to_string()])]
     }
 }
 
@@ -919,6 +963,7 @@ pub mod tests_support {
             sensors: vec![ThermalSensor {
                 name: "x86_pkg_temp".into(),
                 temp_c: 99.0,
+                ..Default::default()
             }],
         });
         s.processes = Some(ProcessStats {
@@ -957,6 +1002,7 @@ pub mod tests_support {
         });
         s.snap = Some(SnapInfo {
             disabled_revisions: 3,
+            excess_revisions: 2,
             snaps_dir_bytes: None,
             refresh_retain: Some(10),
         });
@@ -976,6 +1022,7 @@ pub mod tests_support {
             firewall_frontend: Some(FirewallFrontend::Ufw),
             ssh_permit_root_login: Some(true),
             ssh_password_auth: Some(true),
+            ssh_ports: vec![22],
         });
         s.smart = Some(vec![SmartDevice {
             device: "/dev/sda".into(),
@@ -1102,6 +1149,119 @@ mod tests {
     }
 
     #[test]
+    fn overheating_is_judged_against_each_sensors_own_limit() {
+        use sysmedic_core::snapshot::ThermalSensor;
+        let thermal = |sensors: Vec<ThermalSensor>| Snapshot {
+            thermal: Some(ThermalInfo { sensors }),
+            ..Default::default()
+        };
+        // A GPU hotspot at 100 °C with a 110 °C limit: High, with the limit
+        // in the text — not the Critical the fixed 95 °C cut-off produced.
+        let s = thermal(vec![ThermalSensor {
+            name: "amdgpu/temp2".into(),
+            temp_c: 100.0,
+            crit_c: Some(110.0),
+            max_c: None,
+        }]);
+        let f = &super::thermal::overheating(&s)[0];
+        assert_eq!(f.severity, Severity::High);
+        assert!(f.title.contains("limit 110°C"), "{}", f.title);
+        assert_eq!(f.args, vec!["amdgpu/temp2", "100", "110"]);
+
+        // The same hotspot at 97 is within its margin: quiet.
+        let s = thermal(vec![ThermalSensor {
+            name: "amdgpu/temp2".into(),
+            temp_c: 97.0,
+            crit_c: Some(110.0),
+            max_c: None,
+        }]);
+        assert!(super::thermal::overheating(&s).is_empty());
+
+        // An NVMe at its vendor warning threshold is High even though 80 is
+        // below every fixed cut-off, and the worst sensor wins over the
+        // hottest one (the 90 °C CPU below is fine against its 100 limit).
+        let s = thermal(vec![
+            ThermalSensor {
+                name: "coretemp/temp1".into(),
+                temp_c: 89.0,
+                crit_c: Some(100.0),
+                max_c: Some(100.0),
+            },
+            ThermalSensor {
+                name: "nvme/temp1".into(),
+                temp_c: 81.0,
+                crit_c: Some(85.0),
+                max_c: Some(80.0),
+            },
+        ]);
+        let f = &super::thermal::overheating(&s)[0];
+        assert!(f.title.starts_with("Sensor nvme/temp1"), "{}", f.title);
+        assert_eq!(f.severity, Severity::High);
+
+        // No published limits: the fixed thresholds still apply.
+        let s = thermal(vec![ThermalSensor {
+            name: "x86_pkg_temp".into(),
+            temp_c: 96.0,
+            ..Default::default()
+        }]);
+        assert_eq!(
+            super::thermal::overheating(&s)[0].severity,
+            Severity::Critical
+        );
+    }
+
+    #[test]
+    fn snap_rule_fires_on_excess_only() {
+        let mut s = snapshot();
+        // Four snaps each holding their one rollback copy: nothing to say.
+        s.snap = Some(SnapInfo {
+            disabled_revisions: 4,
+            excess_revisions: 0,
+            snaps_dir_bytes: None,
+            refresh_retain: Some(2),
+        });
+        assert!(super::snap::old_revisions(&s).is_empty());
+        s.snap.as_mut().unwrap().excess_revisions = 3;
+        let f = &super::snap::old_revisions(&s)[0];
+        assert_eq!(f.args, vec!["3"]);
+        assert!(f.title.starts_with("3 old snap revision"));
+    }
+
+    #[test]
+    fn failed_unit_severity_follows_count_and_noise() {
+        use super::services::severity_for;
+        let units = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // The Ubuntu default: fwupd-refresh alone used to cap the score at 74.
+        assert_eq!(
+            severity_for(&units(&["fwupd-refresh.service"])),
+            Severity::Low
+        );
+        assert_eq!(
+            severity_for(&units(&["snap.lxd.activate.service", "apt-news.service"])),
+            Severity::Low
+        );
+        assert_eq!(severity_for(&units(&["nginx.service"])), Severity::Medium);
+        assert_eq!(
+            severity_for(&units(&[
+                "nginx.service",
+                "fwupd-refresh.service",
+                "redis.service"
+            ])),
+            Severity::Medium
+        );
+        assert_eq!(
+            severity_for(&units(&["a.service", "b.service", "c.service"])),
+            Severity::High
+        );
+        let mut s = snapshot();
+        s.services = Some(ServiceStats {
+            running: 1,
+            failed: units(&["fwupd-refresh.service"]),
+        });
+        assert_eq!(super::services::failed_units(&s)[0].severity, Severity::Low);
+    }
+
+    #[test]
     fn security_updates_are_high_severity() {
         let mut s = snapshot();
         s.packages = Some(PackageInfo {
@@ -1121,6 +1281,7 @@ mod tests {
             firewall_frontend: Some(FirewallFrontend::Ufw),
             ssh_permit_root_login: Some(false),
             ssh_password_auth: None,
+            ssh_ports: vec![],
         });
         assert!(super::security::ssh_root_login(&s).is_empty());
         s.security.as_mut().unwrap().ssh_permit_root_login = Some(true);

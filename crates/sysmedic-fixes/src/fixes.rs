@@ -343,7 +343,14 @@ impl Fix for SnapRetain {
 
     fn plan(&self, s: &Snapshot) -> Option<FixPlan> {
         let snap = s.snap.as_ref()?;
-        if snap.disabled_revisions == 0 {
+        // Nothing beyond the rollback copy retain=2 keeps anyway: no plan.
+        if snap.excess_revisions == 0 {
+            return None;
+        }
+        // Already at (or below) the target: applying would be a no-op that
+        // still asked for a password and wrote a journal entry. snapd prunes
+        // the extras on its next refresh by itself.
+        if snap.refresh_retain.is_some_and(|r| r <= TARGET_RETAIN) {
             return None;
         }
         Some(FixPlan {
@@ -403,17 +410,29 @@ impl Fix for FlatpakRemoveUnused {
         Some(FixPlan {
             id: self.id().into(),
             title: self.title(),
+            // `--system` is explicit because the helper runs as root: without
+            // it, root's own per-user installation is what "--user" would
+            // mean, and the user's `--user` runtimes stay where they are. The
+            // text says so, rather than promise the whole list goes.
             description: LocalizedText::new(
                 format!(
-                    "Uninstall {} Flatpak runtime(s) that no installed app needs.",
-                    refs.len()
+                    "Uninstall the Flatpak runtimes in the system installation that no \
+                     installed app needs ({} candidate(s): {}). Runtimes installed per-user \
+                     are left alone.",
+                    refs.len(),
+                    package_list(refs)
                 ),
                 format!(
-                    "إلغاء تثبيت {} من بيئات تشغيل Flatpak لا يحتاجها أي تطبيق مُثبَّت.",
-                    refs.len()
+                    "إلغاء تثبيت بيئات تشغيل Flatpak في التثبيت النظامي التي لا يحتاجها أي \
+                     تطبيق مُثبَّت ({}: {}). ما ثُبِّت لكل مستخدم على حدة يُترك كما هو.",
+                    sysmedic_core::lang::count_ar(refs.len() as u64, "مرشّح", "مرشّحان", "مرشّحات"),
+                    package_list(refs)
                 ),
             ),
-            commands: vec![FixCommand::new("flatpak", &["uninstall", "--unused", "-y"])],
+            commands: vec![FixCommand::new(
+                "flatpak",
+                &["uninstall", "--system", "--unused", "-y"],
+            )],
             affected_paths: vec!["/var/lib/flatpak".into()],
             reversible: false,
             undo: vec![],
@@ -424,14 +443,13 @@ impl Fix for FlatpakRemoveUnused {
     }
 }
 
-/// The TCP port `fix.enable_ufw` keeps open when this machine is reachable
-/// over SSH.
-const SSH_PORT: u16 = 22;
-/// The ufw rule spec for it, stored in the journal so `undo` can take it back
-/// out. Validated on the way back in — see [`parse_allow_rule`].
-const SSH_ALLOW_RULE: &str = "22/tcp";
+/// sshd's default port, assumed when no `sshd_config` could be read but a
+/// socket on it is exposed anyway.
+const SSH_DEFAULT_PORT: u16 = 22;
 /// Highest port number a rule spec may name.
 const MAX_PORT: u32 = 65535;
+/// Separator between the allow rules stored in one journal `restore` value.
+const RULE_SEPARATOR: char = ',';
 
 /// A `<port>/tcp` rule spec read back from the journal, or `None` if it is not
 /// one.
@@ -452,25 +470,76 @@ fn parse_allow_rule(restore: &str) -> Option<String> {
     Some(format!("{port}/tcp"))
 }
 
+/// Every valid rule spec in a comma-separated journal `restore` value.
+///
+/// Validated element by element: a hostile or malformed entry is dropped, the
+/// well-formed ones next to it are kept, so a journal that was tampered with
+/// can at most make `undo` *not* delete a rule — never run anything else.
+fn parse_allow_rules(restore: &str) -> Vec<String> {
+    restore
+        .split(RULE_SEPARATOR)
+        .filter_map(parse_allow_rule)
+        .collect()
+}
+
+/// The rule spec for `port`.
+fn allow_rule(port: u16) -> String {
+    format!("{port}/tcp")
+}
+
 pub struct EnableUfw;
 
 impl EnableUfw {
-    /// Is this machine reachable over SSH right now?
+    /// The SSH ports this machine answers on, which the firewall must keep
+    /// open, or empty when it is not reachable over SSH.
     ///
-    /// Two independent signals, because either one alone misses a real case:
-    /// a listening socket on 22 (what the ports collector sees), or an sshd
-    /// configuration that parsed at all (which means sshd is installed, and
-    /// covers the moment between `systemctl enable ssh` and the next boot).
-    fn ssh_reachable(s: &Snapshot) -> bool {
-        let listening = s.ports.as_ref().is_some_and(|ports| {
-            ports
-                .iter()
-                .any(|p| p.exposed && p.port == SSH_PORT && p.proto.starts_with("tcp"))
-        });
-        let configured = s.security.as_ref().is_some_and(|sec| {
-            sec.ssh_permit_root_login.is_some() || sec.ssh_password_auth.is_some()
-        });
-        listening || configured
+    /// Moving sshd off 22 is one of the most common hardening steps, and a
+    /// version of this that only knew about 22 allowed a port nobody listened
+    /// on, enabled `deny incoming`, and locked the administrator out — while
+    /// its preview promised exactly the opposite. So the ports come from
+    /// sshd's own configuration (`SecurityInfo::ssh_ports`, every `Port`
+    /// directive, 22 by default), narrowed to the ones with an exposed socket
+    /// when any is seen:
+    ///
+    /// * configured and listening → those ports;
+    /// * configured but nothing listening (between `systemctl enable ssh` and
+    ///   the next boot) → every configured port;
+    /// * no `sshd_config` at all, but a socket exposed on 22 → 22, in case the
+    ///   configuration was simply unreadable.
+    fn ssh_ports(s: &Snapshot) -> Vec<u16> {
+        let exposed_tcp: Vec<u16> = s
+            .ports
+            .as_ref()
+            .map(|ports| {
+                ports
+                    .iter()
+                    .filter(|p| p.exposed && p.proto.starts_with("tcp"))
+                    .map(|p| p.port)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let configured: Vec<u16> = s
+            .security
+            .as_ref()
+            .map(|sec| sec.ssh_ports.clone())
+            .unwrap_or_default();
+        if configured.is_empty() {
+            return if exposed_tcp.contains(&SSH_DEFAULT_PORT) {
+                vec![SSH_DEFAULT_PORT]
+            } else {
+                Vec::new()
+            };
+        }
+        let live: Vec<u16> = configured
+            .iter()
+            .copied()
+            .filter(|p| exposed_tcp.contains(p))
+            .collect();
+        if live.is_empty() {
+            configured
+        } else {
+            live
+        }
     }
 
     /// `ufw allow <spec>` — the numeric spec, not the `OpenSSH` application
@@ -501,7 +570,7 @@ impl Fix for EnableUfw {
         vec![FixCommand::new("ufw", &["disable"])]
     }
 
-    /// Reverse the fix, removing the SSH allowance if this apply added one.
+    /// Reverse the fix, removing every SSH allowance this apply added.
     ///
     /// `disable` comes **first** on purpose. `undo` stops at its first failing
     /// command, and `ufw delete` fails when the rule is already gone (the user
@@ -511,7 +580,7 @@ impl Fix for EnableUfw {
     /// harmless; enabled-when-you-asked-for-disabled is not.
     fn undo_from(&self, restore: Option<&str>) -> Vec<FixCommand> {
         let mut commands = self.undo();
-        if let Some(spec) = restore.and_then(parse_allow_rule) {
+        for spec in restore.map(parse_allow_rules).unwrap_or_default() {
             commands.push(FixCommand::new("ufw", &["delete", "allow", &spec]));
         }
         commands
@@ -537,7 +606,8 @@ impl Fix for EnableUfw {
         // at their next login, and `undo`, the thing that would put it right,
         // needs the access that was just removed. A fix advertised as safe and
         // reversible must not be able to do that.
-        let keep_ssh = Self::ssh_reachable(s);
+        let ssh_ports = Self::ssh_ports(s);
+        let specs: Vec<String> = ssh_ports.iter().map(|p| allow_rule(*p)).collect();
 
         // What the firewall will start blocking, named in the preview: the
         // consent contract must not be narrower than the effect.
@@ -547,29 +617,40 @@ impl Fix for EnableUfw {
             .map(|ports| {
                 ports
                     .iter()
-                    .filter(|p| p.exposed && !(keep_ssh && p.port == SSH_PORT))
+                    .filter(|p| {
+                        p.exposed && !(p.proto.starts_with("tcp") && ssh_ports.contains(&p.port))
+                    })
                     .map(|p| format!("{}/{}", p.port, p.proto))
                     .collect()
             })
             .unwrap_or_default();
 
-        let mut commands = Vec::new();
-        if keep_ssh {
-            commands.push(Self::allow(SSH_ALLOW_RULE));
-        }
+        let mut commands: Vec<FixCommand> = specs.iter().map(|spec| Self::allow(spec)).collect();
         commands.push(FixCommand::new("ufw", &["--force", "enable"]));
 
-        let (ssh_en, ssh_ar) = if keep_ssh {
+        let (ssh_en, ssh_ar) = if specs.is_empty() {
+            (String::new(), String::new())
+        } else {
             (
                 format!(
-                    " This machine answers on SSH, so port {SSH_PORT}/tcp is allowed first —                      without that, enabling the firewall would lock out every new remote login."
+                    " This machine answers on SSH, so {} allowed first — without that, \
+                     enabling the firewall would lock out every new remote login.",
+                    if specs.len() == 1 {
+                        format!("port {} is", specs[0])
+                    } else {
+                        format!("ports {} are", specs.join(", "))
+                    }
                 ),
                 format!(
-                    " هذا الجهاز يستجيب على SSH، لذا يُسمح للمنفذ {SSH_PORT}/tcp أولاً — بدون ذلك                      يمنع تفعيل الجدار الناري كل دخول بعيد جديد."
+                    " هذا الجهاز يستجيب على SSH، لذا يُسمح {} أولاً — بدون ذلك يمنع تفعيل \
+                     الجدار الناري كل دخول بعيد جديد.",
+                    if specs.len() == 1 {
+                        format!("للمنفذ {}", specs[0])
+                    } else {
+                        format!("للمنافذ {}", specs.join("، "))
+                    }
                 ),
             )
-        } else {
-            (String::new(), String::new())
         };
         let (blocked_en, blocked_ar) = if blocked.is_empty() {
             (String::new(), String::new())
@@ -586,24 +667,28 @@ impl Fix for EnableUfw {
             )
         };
 
+        // Carry the allowances into the journal so undo removes exactly what
+        // this apply added, and nothing else.
+        let restore = (!specs.is_empty()).then(|| specs.join(&RULE_SEPARATOR.to_string()));
+
         Some(FixPlan {
             id: self.id().into(),
             title: self.title(),
             description: LocalizedText::new(
                 format!(
-                    "Turn on ufw with its default policy: deny incoming, allow                      outgoing.{ssh_en}{blocked_en}"
+                    "Turn on ufw with its default policy: deny incoming, allow \
+                     outgoing.{ssh_en}{blocked_en}"
                 ),
                 format!(
-                    "تشغيل ufw بسياسته الافتراضية: منع الوارد، والسماح                      بالصادر.{ssh_ar}{blocked_ar}"
+                    "تشغيل ufw بسياسته الافتراضية: منع الوارد، والسماح \
+                     بالصادر.{ssh_ar}{blocked_ar}"
                 ),
             ),
             commands,
             affected_paths: vec!["/etc/ufw".into(), "/lib/systemd/system/ufw.service".into()],
             reversible: true,
-            // Carry the allowance into the journal so undo removes exactly
-            // what this apply added, and nothing else.
-            undo: self.undo_from(keep_ssh.then(|| SSH_ALLOW_RULE.to_string()).as_deref()),
-            restore: keep_ssh.then(|| SSH_ALLOW_RULE.to_string()),
+            undo: self.undo_from(restore.as_deref()),
+            restore,
             risk: Severity::Low,
             needs_root: true,
         })
@@ -712,6 +797,7 @@ mod tests {
             }),
             snap: Some(SnapInfo {
                 disabled_revisions: 3,
+                excess_revisions: 2,
                 snaps_dir_bytes: None,
                 refresh_retain: Some(5),
             }),
@@ -723,6 +809,7 @@ mod tests {
                 firewall_frontend: Some(FirewallFrontend::Ufw),
                 ssh_permit_root_login: None,
                 ssh_password_auth: None,
+                ssh_ports: vec![22],
             }),
             ..Default::default()
         }
@@ -860,6 +947,7 @@ mod tests {
                 firewall_frontend: Some(FirewallFrontend::Ufw),
                 ssh_permit_root_login: None,
                 ssh_password_auth: None,
+                ssh_ports: vec![],
             }),
             ..Default::default()
         };
@@ -918,7 +1006,7 @@ mod tests {
             security: Some(SecurityInfo {
                 firewall_active: Some(false),
                 firewall_frontend: Some(FirewallFrontend::Ufw),
-                ssh_password_auth: Some(false),
+                ssh_ports: vec![22],
                 ..Default::default()
             }),
             ..Default::default()
@@ -926,6 +1014,102 @@ mod tests {
         assert_eq!(
             EnableUfw.plan(&s).unwrap().commands[0].display(),
             "ufw allow 22/tcp"
+        );
+    }
+
+    #[test]
+    fn ssh_on_a_custom_port_is_allowed_not_22() {
+        // The lockout the 22-only version caused: `Port 2222` in sshd_config,
+        // sshd listening there, nothing on 22. Allowing 22 and enabling
+        // `deny incoming` cut off every new login while the preview said the
+        // machine was safe.
+        let s = Snapshot {
+            security: Some(SecurityInfo {
+                firewall_active: Some(false),
+                firewall_frontend: Some(FirewallFrontend::Ufw),
+                ssh_ports: vec![2222],
+                ..Default::default()
+            }),
+            ports: Some(vec![port("tcp", 2222), port("tcp", 80)]),
+            ..Default::default()
+        };
+        let plan = EnableUfw.plan(&s).unwrap();
+        assert_eq!(plan.commands[0].display(), "ufw allow 2222/tcp");
+        assert_eq!(plan.commands[1].display(), "ufw --force enable");
+        assert_eq!(plan.commands.len(), 2);
+        // The consent text names the real port, and never claims 22.
+        assert!(
+            plan.description.en.contains("2222/tcp"),
+            "{}",
+            plan.description.en
+        );
+        assert!(!plan.description.en.contains(" 22/tcp"));
+        assert!(plan.description.ar.contains("2222/tcp"));
+        // 2222 is kept, 80 is what gets blocked.
+        assert!(plan.description.en.contains("blocked afterwards: 80/tcp"));
+        assert!(!plan.description.en.contains("blocked afterwards: 2222"));
+        assert_eq!(plan.restore.as_deref(), Some("2222/tcp"));
+        assert_eq!(plan.undo[1].display(), "ufw delete allow 2222/tcp");
+    }
+
+    #[test]
+    fn every_listening_ssh_port_is_allowed() {
+        // sshd on two ports (a migration in progress): both stay open, and
+        // undo removes exactly both, after disabling.
+        let s = Snapshot {
+            security: Some(SecurityInfo {
+                firewall_active: Some(false),
+                firewall_frontend: Some(FirewallFrontend::Ufw),
+                ssh_ports: vec![22, 2222],
+                ..Default::default()
+            }),
+            ports: Some(vec![port("tcp", 22), port("tcp6", 2222)]),
+            ..Default::default()
+        };
+        let plan = EnableUfw.plan(&s).unwrap();
+        assert_eq!(plan.commands[0].display(), "ufw allow 22/tcp");
+        assert_eq!(plan.commands[1].display(), "ufw allow 2222/tcp");
+        assert_eq!(plan.commands[2].display(), "ufw --force enable");
+        assert_eq!(plan.restore.as_deref(), Some("22/tcp,2222/tcp"));
+        assert_eq!(plan.undo[0].display(), "ufw disable");
+        assert_eq!(plan.undo[1].display(), "ufw delete allow 22/tcp");
+        assert_eq!(plan.undo[2].display(), "ufw delete allow 2222/tcp");
+        assert!(plan.description.en.contains("ports 22/tcp, 2222/tcp are"));
+    }
+
+    #[test]
+    fn only_the_configured_ports_that_actually_listen_are_allowed() {
+        // sshd_config lists two ports but only one has a socket: don't
+        // pre-puncture the firewall for the one nobody answers on.
+        let s = Snapshot {
+            security: Some(SecurityInfo {
+                firewall_active: Some(false),
+                firewall_frontend: Some(FirewallFrontend::Ufw),
+                ssh_ports: vec![22, 2222],
+                ..Default::default()
+            }),
+            ports: Some(vec![port("tcp", 2222)]),
+            ..Default::default()
+        };
+        let plan = EnableUfw.plan(&s).unwrap();
+        assert_eq!(plan.commands[0].display(), "ufw allow 2222/tcp");
+        assert_eq!(plan.commands.len(), 2);
+    }
+
+    #[test]
+    fn a_tampered_rule_list_keeps_only_its_valid_entries() {
+        // `restore` is a comma-separated list now; each element is validated
+        // on its own, so a bad one cannot smuggle anything and cannot take
+        // the good ones down with it either.
+        let commands = EnableUfw.undo_from(Some("22/tcp,$(id)/tcp,2222/tcp; rm -rf /,2200/tcp"));
+        let shown: Vec<String> = commands.iter().map(|c| c.display()).collect();
+        assert_eq!(
+            shown,
+            vec![
+                "ufw disable",
+                "ufw delete allow 22/tcp",
+                "ufw delete allow 2200/tcp"
+            ]
         );
     }
 
@@ -947,6 +1131,26 @@ mod tests {
         assert_eq!(plan.commands[0].display(), "ufw --force enable");
         assert!(plan.restore.is_none());
         assert_eq!(plan.undo.len(), 1);
+    }
+
+    #[test]
+    fn an_unreadable_sshd_config_still_protects_a_socket_on_22() {
+        // No sshd_config could be read (so no configured ports), but something
+        // is exposed on 22: assume it is SSH rather than lock it out.
+        let s = Snapshot {
+            security: Some(SecurityInfo {
+                firewall_active: Some(false),
+                firewall_frontend: Some(FirewallFrontend::Ufw),
+                ..Default::default()
+            }),
+            ports: Some(vec![port("tcp", 22), port("tcp", 2222)]),
+            ..Default::default()
+        };
+        let plan = EnableUfw.plan(&s).unwrap();
+        assert_eq!(plan.commands[0].display(), "ufw allow 22/tcp");
+        // ...but 2222 is just a port here, not SSH, and is reported as blocked.
+        assert_eq!(plan.commands.len(), 2);
+        assert!(plan.description.en.contains("blocked afterwards: 2222/tcp"));
     }
 
     #[test]
@@ -1028,6 +1232,7 @@ mod tests {
         let s = Snapshot {
             snap: Some(SnapInfo {
                 disabled_revisions: 4,
+                excess_revisions: 2,
                 snaps_dir_bytes: None,
                 refresh_retain: Some(10),
             }),
@@ -1051,6 +1256,7 @@ mod tests {
         let s = Snapshot {
             snap: Some(SnapInfo {
                 disabled_revisions: 4,
+                excess_revisions: 2,
                 snaps_dir_bytes: None,
                 refresh_retain: None,
             }),
@@ -1059,6 +1265,37 @@ mod tests {
         let plan = SnapRetain.plan(&s).unwrap();
         assert_eq!(plan.undo[0].display(), "snap set system refresh.retain=3");
         assert!(plan.restore.is_none());
+    }
+
+    #[test]
+    fn snap_retain_is_not_offered_once_it_has_been_applied() {
+        // retain=2 keeps one disabled revision per snap, so `disabled > 0`
+        // stayed true after the fix and it was offered — and journalled —
+        // forever. The fix is about the *excess*, and only while retain is
+        // above the target.
+        let applied = Snapshot {
+            snap: Some(SnapInfo {
+                disabled_revisions: 4, // one rollback per snap, four snaps
+                excess_revisions: 0,
+                snaps_dir_bytes: None,
+                refresh_retain: Some(2),
+            }),
+            ..Default::default()
+        };
+        assert!(SnapRetain.plan(&applied).is_none());
+
+        // Pruning is pending (retain already 2, snapd has not refreshed yet):
+        // still nothing to do that the user needs to authorize.
+        let pending = Snapshot {
+            snap: Some(SnapInfo {
+                disabled_revisions: 6,
+                excess_revisions: 2,
+                snaps_dir_bytes: None,
+                refresh_retain: Some(2),
+            }),
+            ..Default::default()
+        };
+        assert!(SnapRetain.plan(&pending).is_none());
     }
 
     #[test]
