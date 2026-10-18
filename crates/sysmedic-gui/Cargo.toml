@@ -22,3 +22,10 @@ sysmedic-history = { workspace = true }
 sysmedic-report = { workspace = true }
 gtk = { package = "gtk4", version = "0.9", features = ["v4_14"] }
 adw = { package = "libadwaita", version = "0.7", features = ["v1_5"] }
+# The treemap draws its own labels. cairo's toy text API has no shaping and
+# no bidi, so Arabic folder names came out as disconnected, reversed glyphs;
+# Pango lays them out properly (and ellipsizes long ones).
+pangocairo = "0.20"
+
+[dev-dependencies]
+tempfile = "3"

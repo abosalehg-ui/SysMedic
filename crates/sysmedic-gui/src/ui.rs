@@ -3,6 +3,7 @@
 //! main loop stays responsive.
 
 use std::cell::RefCell;
+use std::path::Path;
 use std::process::Command;
 use std::rc::Rc;
 
@@ -80,6 +81,9 @@ pub fn build_window(app: &adw::Application) {
 
     let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
     refresh.set_tooltip_text(Some(strings.run_checkup));
+    // A tooltip is the accessible *description*; an icon button needs a name
+    // or a screen reader announces "button".
+    refresh.update_property(&[gtk::accessible::Property::Label(strings.run_checkup)]);
     let spinner = gtk::Spinner::new();
 
     let header = adw::HeaderBar::new();
@@ -323,7 +327,11 @@ fn install_export_action(
                     let content = render_export(&report, export_format_for(&path), lang);
                     let message =
                         match sysmedic_core::paths::write_private(&path, content.as_bytes()) {
-                            Ok(()) => format!("{} — {}", strings.export_done, path.display()),
+                            Ok(()) => format!(
+                                "{} — {}",
+                                strings.export_done,
+                                sysmedic_core::lang::isolate(&path.display().to_string())
+                            ),
                             Err(e) => format!("{}: {e}", strings.export_failed),
                         };
                     toasts.add_toast(adw::Toast::new(&message));
@@ -357,16 +365,41 @@ fn install_undo_action(
         let window = window.clone();
         let toasts = toasts.clone();
         move |_, _| {
-            // What would be undone, named in the user's language.
-            let title = sysmedic_fixes::journal_read_path()
+            // What would be undone, named in the user's language — and, as
+            // for apply, when it happened and exactly what will run: the
+            // firewall enabled weeks ago may carry rules by now.
+            let preview = sysmedic_fixes::journal_read_path()
                 .and_then(|path| sysmedic_fixes::Journal::load(path).ok())
-                .and_then(|journal| sysmedic_fixes::undo_title_in(&journal, lang));
-            let Some(title) = title else {
+                .and_then(|journal| sysmedic_fixes::undo_preview_in(&journal, lang));
+            let Some(preview) = preview else {
                 toasts.add_toast(adw::Toast::new(strings.undo_nothing));
                 return;
             };
 
-            let dialog = adw::AlertDialog::new(Some(strings.undo_confirm_title), Some(&title));
+            let body = format!(
+                "{}\n{} {}",
+                preview.title,
+                strings.undo_applied_at,
+                local_timestamp(&preview.applied_at)
+            );
+            let dialog = adw::AlertDialog::new(Some(strings.undo_confirm_title), Some(&body));
+            if !preview.commands.is_empty() {
+                let commands: Vec<String> = preview
+                    .commands
+                    .iter()
+                    .map(|c| format!("  $ {}", c.display()))
+                    .collect();
+                let listing = gtk::Label::new(Some(&format!(
+                    "{}\n{}",
+                    strings.undo_commands,
+                    commands.join("\n")
+                )));
+                listing.set_xalign(0.0);
+                listing.set_wrap(true);
+                listing.add_css_class("monospace");
+                listing.set_selectable(true);
+                dialog.set_extra_child(Some(&listing));
+            }
             dialog.add_response("cancel", strings.cancel);
             dialog.add_response("undo", strings.undo_action);
             dialog.set_response_appearance("undo", adw::ResponseAppearance::Suggested);
@@ -393,7 +426,8 @@ fn install_undo_action(
                     // undoable, and the helper re-checks the tier of the entry
                     // it is about to reverse.
                     let helper = sysmedic_fixes::undo_helper();
-                    let result = gtk::gio::spawn_blocking(move || run_helper(helper, vec!["undo"]))
+                    let args = vec!["undo".to_string(), sysmedic_fixes::helper_lang_arg(lang)];
+                    let result = gtk::gio::spawn_blocking(move || run_helper(helper, args))
                         .await
                         .unwrap_or(Err((
                             HelperFailure::Failed,
@@ -438,12 +472,13 @@ fn show_about(parent: &adw::ApplicationWindow, lang: Lang) {
     about.present(Some(parent));
 }
 
-/// Run a privileged helper action through pkexec.
+/// Run a privileged helper action through pkexec — the one place the GUI
+/// launches it, for apply and undo alike.
 ///
 /// Returns the helper's own words on failure. `.status()` threw them away, so
 /// every failure — a dismissed password prompt, a missing helper, `apt-get`
 /// dying on a held dpkg lock — reached the user as the same sentence.
-fn run_helper(helper: String, args: Vec<&'static str>) -> Result<(), (HelperFailure, String)> {
+fn run_helper(helper: String, args: Vec<String>) -> Result<(), (HelperFailure, String)> {
     match Command::new("pkexec").arg(&helper).args(&args).output() {
         Ok(out) if out.status.success() => Ok(()),
         Ok(out) => Err((
@@ -470,27 +505,6 @@ fn show_failure(
     );
     dialog.add_response("ok", strings.ok);
     dialog.present(Some(window));
-}
-
-/// What the UI should do after the helper exits. Pure, so the branch that
-/// decides whether a privileged change succeeded — previously buried in a
-/// closure and untested — can be exercised directly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FixOutcome {
-    /// The helper reported success: confirm it and re-scan.
-    Applied,
-    /// pkexec was cancelled, the helper failed, or it is not installed.
-    /// The user must be told, not left with a silent re-scan.
-    Failed,
-}
-
-/// Decide the outcome from the helper's exit status.
-pub fn fix_outcome(helper_succeeded: bool) -> FixOutcome {
-    if helper_succeeded {
-        FixOutcome::Applied
-    } else {
-        FixOutcome::Failed
-    }
 }
 
 /// The dialog appearance a plan's reversibility earns. An irreversible
@@ -538,6 +552,9 @@ fn confirm_and_apply(
     dialog.set_close_response("cancel");
 
     let fix_id = plan.id.clone();
+    // The digest of the commands the user is reading. The helper rebuilds the
+    // plan as root and refuses if that one would run anything else.
+    let fingerprint = plan.fingerprint();
     let window = window.clone();
     // Separate handles for the response callback, so the originals stay
     // available for `dialog.present` at the end of this function.
@@ -548,6 +565,7 @@ fn confirm_and_apply(
             return;
         }
         let fix_id = fix_id.clone();
+        let fingerprint = fingerprint.clone();
         let on_changed = on_changed.clone();
         let window = cb_window.clone();
         let toasts = toasts.clone();
@@ -562,37 +580,27 @@ fn confirm_and_apply(
             let helper = sysmedic_fixes::helper_for_fix(&fix_id).unwrap_or_else(|| {
                 sysmedic_fixes::helper_path_for(sysmedic_fixes::FixTier::Destructive)
             });
-            let id = fix_id.clone();
+            let args = vec![
+                "apply".to_string(),
+                fix_id.clone(),
+                fingerprint,
+                sysmedic_fixes::helper_lang_arg(lang),
+            ];
             // pkexec prompts polkit; the helper does the privileged work.
-            let result = gtk::gio::spawn_blocking(move || {
-                match Command::new("pkexec")
-                    .arg(&helper)
-                    .arg("apply")
-                    .arg(&id)
-                    .output()
-                {
-                    Ok(out) if out.status.success() => Ok(()),
-                    Ok(out) => Err((
-                        viewmodel::classify_failure(out.status.code()),
-                        String::from_utf8_lossy(&out.stderr).into_owned(),
-                    )),
-                    Err(e) => Err((HelperFailure::NotAuthorized, e.to_string())),
-                }
-            })
-            .await
-            .unwrap_or(Err((
-                HelperFailure::Failed,
-                "the helper could not be started".to_string(),
-            )));
+            let result = gtk::gio::spawn_blocking(move || run_helper(helper, args))
+                .await
+                .unwrap_or(Err((
+                    HelperFailure::Failed,
+                    "the helper could not be started".to_string(),
+                )));
             running.dismiss();
-            if fix_outcome(result.is_ok()) == FixOutcome::Applied {
+            match result {
                 // Say it worked — a silent re-scan left users guessing whether
                 // the fix ran or the score just changed.
-                toasts.add_toast(adw::Toast::new(strings.fix_applied));
-            } else if let Err(failure) = result {
+                Ok(()) => toasts.add_toast(adw::Toast::new(strings.fix_applied)),
                 // Tell the user *which* thing went wrong, and what the helper
                 // said, instead of one sentence covering three situations.
-                show_failure(&window, lang, strings.fix_failed_title, failure);
+                Err(failure) => show_failure(&window, lang, strings.fix_failed_title, failure),
             }
             on_changed(); // re-scan so the UI reflects the new state
         });
@@ -654,7 +662,11 @@ fn report_view(
         let trend = sysmedic_history::trend_delta(&entries)
             .map(|d| format!("  ({d:+} {})", strings.trend_since_first))
             .unwrap_or_default();
-        let history = gtk::Label::new(Some(&format!("{spark}{trend}")));
+        // The bars are direction-neutral characters: inside an Arabic label
+        // the paragraph runs right-to-left and the newest reading landed on
+        // the *left*, while the tooltip said "newest on the right". Isolating
+        // the strip left-to-right keeps the time axis where the tooltip says.
+        let history = gtk::Label::new(Some(&format!("\u{2066}{spark}\u{2069}{trend}")));
         history.add_css_class("dim-label");
         history.add_css_class("monospace");
         history.set_tooltip_text(Some(strings.history_tooltip));
@@ -695,6 +707,18 @@ fn report_view(
 
     // Findings.
     root.append(&section_label(strings.findings));
+    // Inside a Flatpak sandbox pkexec cannot be reached, so an "Apply fix"
+    // button could only ever end in "the fix helper is not installed" — after
+    // a password prompt. Say so once instead of offering it per finding.
+    let fixes_available = viewmodel::fixes_available(Path::new(viewmodel::FLATPAK_INFO));
+    if !fixes_available {
+        let note = gtk::Label::new(Some(strings.fixes_need_deb));
+        note.add_css_class("dim-label");
+        note.add_css_class("caption");
+        note.set_wrap(true);
+        note.set_xalign(0.0);
+        root.append(&note);
+    }
     let findings = boxed_list();
     if report.findings.is_empty() {
         let ok = adw::ActionRow::builder().title(strings.no_findings).build();
@@ -733,6 +757,7 @@ fn report_view(
 
         // If SysMedic has a one-click fix for this finding, offer it.
         if let Some(plan) = sysmedic_fixes::fix_for_finding(&finding.id)
+            .filter(|_| fixes_available)
             .and_then(|fix_id| sysmedic_fixes::plan(fix_id, &report.snapshot))
         {
             let button = gtk::Button::with_label(strings.apply_fix);
@@ -846,14 +871,6 @@ mod tests {
 
     fn serde_json_is_object(s: &str) -> bool {
         s.trim_start().starts_with('{')
-    }
-
-    #[test]
-    fn a_failed_helper_is_never_reported_as_success() {
-        // The user must be told when pkexec was cancelled or the helper is
-        // missing; a silent re-scan left them guessing whether it ran.
-        assert_eq!(fix_outcome(true), FixOutcome::Applied);
-        assert_eq!(fix_outcome(false), FixOutcome::Failed);
     }
 
     #[test]

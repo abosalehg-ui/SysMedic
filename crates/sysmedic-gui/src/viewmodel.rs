@@ -1,5 +1,6 @@
 //! Pure presentation logic for the GUI — no GTK types, fully unit-tested.
 
+use sysmedic_core::lang::CountedNoun;
 use sysmedic_core::{HealthReport, Severity};
 use sysmedic_knowledge::Lang;
 
@@ -59,7 +60,29 @@ pub struct Strings {
     pub fix_cancelled_body: &'static str,
     pub fix_unauthorized_body: &'static str,
     pub disk_scanning_path: &'static str,
-    pub disk_entries: &'static str,
+    pub fixes_need_deb: &'static str,
+    pub undo_applied_at: &'static str,
+    pub undo_commands: &'static str,
+}
+
+/// Directory entries, counted on the disk page while a scan runs.
+pub const ENTRIES: CountedNoun = CountedNoun {
+    en_one: "entry",
+    en_many: "entries",
+    ar_one: "عنصر",
+    ar_two: "عنصران",
+    ar_many: "عناصر",
+};
+
+/// The file every Flatpak sandbox carries. Its presence means pkexec and the
+/// privileged helpers are out of reach, so the fix buttons would only ever
+/// lead to "the fix helper is not installed".
+pub const FLATPAK_INFO: &str = "/.flatpak-info";
+
+/// Whether one-click fixes can work in this process. Pure in `sandbox_marker`
+/// so it is testable; callers pass [`FLATPAK_INFO`].
+pub fn fixes_available(sandbox_marker: &std::path::Path) -> bool {
+    !sandbox_marker.exists()
 }
 
 impl Strings {
@@ -82,8 +105,10 @@ impl Strings {
                 apply: "Apply",
                 ok: "OK",
                 fix_failed_title: "The fix was not applied",
-                fix_failed_body:
-                    "Authorization was cancelled or failed, or the fix helper is not installed.",
+                // `HelperFailure::Failed` means authorization *succeeded* and
+                // the helper ran; the old generic sentence said the opposite
+                // right above the helper's own words.
+                fix_failed_body: "The fix ran but did not complete. The helper reported:",
                 reversible_yes: "This fix can be undone.",
                 reversible_no: "This fix cannot be undone.",
                 about: "About SysMedic",
@@ -122,7 +147,10 @@ impl Strings {
                     "Authorization was refused, or the fix helper is not installed. \
                      It ships with the .deb package.",
                 disk_scanning_path: "Scanning",
-                disk_entries: "entries",
+                fixes_need_deb: "Applying fixes needs the .deb package: this copy runs in a \
+                                 sandbox that cannot reach the privileged helper.",
+                undo_applied_at: "Applied:",
+                undo_commands: "Commands that will run:",
             },
             Lang::Ar => &Strings {
                 health_score: "الدرجة الصحية",
@@ -141,7 +169,7 @@ impl Strings {
                 apply: "تطبيق",
                 ok: "حسنًا",
                 fix_failed_title: "لم يُطبَّق الإصلاح",
-                fix_failed_body: "أُلغيت المصادقة أو فشلت، أو أن أداة الإصلاح غير مُثبَّتة.",
+                fix_failed_body: "شُغِّل الإصلاح لكنه لم يكتمل. قالت أداة الإصلاح:",
                 reversible_yes: "يمكن التراجع عن هذا الإصلاح.",
                 reversible_no: "لا يمكن التراجع عن هذا الإصلاح.",
                 about: "عن SysMedic",
@@ -178,7 +206,10 @@ impl Strings {
                 fix_unauthorized_body:
                     "رُفضت المصادقة، أو أن أداة الإصلاح غير مُثبَّتة. تأتي مع حزمة ‎.deb‎.",
                 disk_scanning_path: "جارٍ فحص",
-                disk_entries: "عنصر",
+                fixes_need_deb: "تطبيق الإصلاحات يحتاج حزمة ‎.deb‎: هذه النسخة تعمل داخل صندوق \
+                                 معزول لا يصل إلى أداة الإصلاح المميّزة.",
+                undo_applied_at: "طُبّق في:",
+                undo_commands: "الأوامر التي ستُنفَّذ:",
             },
         }
     }
@@ -231,7 +262,7 @@ pub fn failure_body(failure: HelperFailure, stderr: &str, lang: Lang) -> String 
         // two there is nothing on stderr worth showing.
         HelperFailure::Failed => match stderr_tail(stderr) {
             Some(detail) => format!("{reason}\n\n{detail}"),
-            None => reason.to_string(),
+            None => reason.trim_end_matches(':').to_string(),
         },
         _ => reason.to_string(),
     }
@@ -401,9 +432,20 @@ mod tests {
         );
         assert!(body.contains("lock-frontend"), "{body}");
 
-        // Nothing on stderr: just the reason, with no trailing blank block.
+        // The reason says what happened — the helper ran — not that
+        // authorization failed, which is the one thing that did not happen.
+        assert!(body.starts_with("The fix ran"), "{body}");
+        assert!(!body.to_lowercase().contains("authorization"), "{body}");
+        let ar = failure_body(HelperFailure::Failed, "x", Lang::Ar);
+        assert!(!ar.contains("المصادقة"), "{ar}");
+
+        // Nothing on stderr: just the reason, with no trailing blank block
+        // and no colon announcing words that never come.
         let bare = failure_body(HelperFailure::Failed, "   \n\n", Lang::En);
-        assert_eq!(bare, Strings::for_lang(Lang::En).fix_failed_body);
+        assert_eq!(
+            bare,
+            "The fix ran but did not complete. The helper reported"
+        );
     }
 
     #[test]
@@ -504,7 +546,9 @@ mod tests {
             fix_cancelled_body,
             fix_unauthorized_body,
             disk_scanning_path,
-            disk_entries,
+            fixes_need_deb,
+            undo_applied_at,
+            undo_commands,
         } = s;
         vec![
             ("health_score", health_score),
@@ -559,7 +603,9 @@ mod tests {
             ("fix_cancelled_body", fix_cancelled_body),
             ("fix_unauthorized_body", fix_unauthorized_body),
             ("disk_scanning_path", disk_scanning_path),
-            ("disk_entries", disk_entries),
+            ("fixes_need_deb", fixes_need_deb),
+            ("undo_applied_at", undo_applied_at),
+            ("undo_commands", undo_commands),
         ]
     }
 
@@ -598,6 +644,15 @@ mod tests {
             en.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
             ar.iter().map(|(n, _)| *n).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn fixes_are_unavailable_inside_a_sandbox() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join(".flatpak-info");
+        assert!(fixes_available(&marker));
+        std::fs::write(&marker, "[Application]\n").unwrap();
+        assert!(!fixes_available(&marker));
     }
 
     #[test]
