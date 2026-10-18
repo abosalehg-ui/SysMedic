@@ -10,7 +10,7 @@ use sysmedic_core::finding::Severity;
 use sysmedic_core::score::grade_label_in;
 use sysmedic_core::{HealthReport, Lang, Snapshot};
 
-use crate::text::tools;
+use crate::text::{tools, ALERTS, FINDINGS};
 use sysmedic_diskscan::human_size as human;
 use sysmedic_history::HistoryEntry;
 
@@ -155,12 +155,11 @@ pub fn monitor(quiet: bool, lang: Lang) -> Result<()> {
 
     if !quiet {
         println!(
-            "{} {}/100 ({}). {} {}",
+            "{} {}/100 ({}). {}.",
             t.health_score,
             report.score,
             grade_label_in(report.score, lang),
-            alerts.len(),
-            t.alerts
+            ALERTS.render(alerts.len() as u64, lang)
         );
         for a in &alerts {
             println!(
@@ -228,14 +227,13 @@ pub fn history(lang: Lang) -> Result<()> {
     println!();
     for e in entries.iter().rev().take(10) {
         println!(
-            "  {}  {:>3}/100  {:<10} {} {}",
+            "  {}  {:>3}/100  {:<10} {}",
             e.at,
             e.score,
             // The stored grade is the English identifier; display layers
             // localize from the score, as the report and dashboard do.
             grade_label_in(e.score, lang),
-            e.findings,
-            t.findings_count
+            FINDINGS.render(e.findings as u64, lang)
         );
     }
     Ok(())

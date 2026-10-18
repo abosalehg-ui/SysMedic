@@ -35,8 +35,11 @@ deliberate change: bump the manifest, and say why in the commit.
   must also declare `needs_collectors()` — the snapshot sections the plan
   reads — because the privileged helper collects exactly those, as root, and
   nothing else. A plan must not be able to leave the machine less reachable
-  than it found it: `fix.enable_ufw` allows SSH before it enables the
-  firewall for precisely that reason.
+  than it found it: `fix.enable_ufw` allows every SSH port sshd is
+  configured on (not just 22) before it enables the firewall for precisely
+  that reason. A plan's commands are what the user consents to: the helper
+  checks their fingerprint, so a fix must build the same commands from the
+  same facts whether the snapshot was taken with or without privileges.
 - Keep commits focused; describe *why* in the message body.
 
 ## Where to help

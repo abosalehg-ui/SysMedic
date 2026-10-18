@@ -123,7 +123,15 @@ pub fn apply(id: &str, dry_run: bool, yes: bool, lang: Lang) -> Result<()> {
         // whether this fix can be undone.
         let helper =
             fixes::helper_for_fix(id).ok_or_else(|| anyhow::anyhow!("fix '{id}' is unknown"))?;
-        delegate(&helper, &["apply", id], lang)
+        // The fingerprint ties the helper's run to the plan previewed above:
+        // it rebuilds the plan as root and refuses if that one would run
+        // anything else.
+        let fingerprint = plan.fingerprint();
+        delegate(
+            &helper,
+            &["apply", id, &fingerprint, &fixes::helper_lang_arg(lang)],
+            lang,
+        )
     }
 }
 
@@ -134,16 +142,25 @@ pub fn undo(yes: bool, lang: Lang) -> Result<()> {
         // Preview from the journal the *helper* writes, not the one this
         // unprivileged process could write.
         match readable_journal() {
-            Ok(journal) => match journal.last_undoable() {
-                Some((_, entry)) => {
-                    let title =
-                        fixes::undo_title_in(&journal, lang).unwrap_or_else(|| entry.title.clone());
+            Ok(journal) => match fixes::undo_preview_in(&journal, lang) {
+                Some(preview) => {
                     println!(
                         "{} {} ({})",
                         t.would_undo,
-                        title.if_supports_color(Stream::Stdout, |t| t.bold()),
-                        entry.fix_id
+                        preview
+                            .title
+                            .if_supports_color(Stream::Stdout, |t| t.bold()),
+                        preview.fix_id
                     );
+                    // The same consent an apply gets: when it happened, and
+                    // exactly what a root process is about to run.
+                    println!("{} {}", t.applied_at, preview.applied_at);
+                    if !preview.commands.is_empty() {
+                        println!("{}", t.undo_commands);
+                        for command in &preview.commands {
+                            println!("  $ {}", command.display());
+                        }
+                    }
                     println!(
                         "{}",
                         t.rerun_to_undo
@@ -172,7 +189,11 @@ pub fn undo(yes: bool, lang: Lang) -> Result<()> {
         );
         Ok(())
     } else {
-        delegate(&fixes::undo_helper(), &["undo"], lang)
+        delegate(
+            &fixes::undo_helper(),
+            &["undo", &fixes::helper_lang_arg(lang)],
+            lang,
+        )
     }
 }
 

@@ -21,9 +21,10 @@ use crate::{Explanation, Lang};
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 /// Anthropic API version header value.
 const API_VERSION: &str = "2023-06-01";
-/// Default model. Overridable via `SYSMEDIC_LLM_MODEL` for users who prefer a
-/// cheaper or newer one.
-pub const DEFAULT_MODEL: &str = "claude-opus-5";
+/// Default model: the current Opus. Overridable via `SYSMEDIC_LLM_MODEL` for
+/// users who prefer a cheaper or newer one. (`claude-opus-5` is still served
+/// but costs more per token than its successor for the same tier.)
+pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
 /// Output cap. Current models think before answering and those tokens count
 /// against this limit, so the old 1024 could be spent before the explanation
 /// itself began — the answer came back truncated, or empty and indistinguishable

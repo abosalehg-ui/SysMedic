@@ -3,6 +3,7 @@
 use std::fmt::Write as _;
 
 use owo_colors::OwoColorize;
+use sysmedic_core::lang::CountedNoun;
 use sysmedic_core::{HealthReport, Severity};
 use sysmedic_knowledge::{explain, Lang};
 
@@ -88,12 +89,10 @@ pub struct Tools {
     pub scope_network: &'static str,
     pub scope_localhost: &'static str,
     pub health_score: &'static str,
-    pub alerts: &'static str,
     pub no_history_location: &'static str,
     pub no_history_yet: &'static str,
     pub history_title: &'static str,
     pub trend_since_first: &'static str,
-    pub findings_count: &'static str,
     pub schedule_enabled: &'static str,
     pub schedule_not_activated: &'static str,
     pub schedule_disabled: &'static str,
@@ -102,7 +101,32 @@ pub struct Tools {
     pub cadence_daily: &'static str,
     pub cadence_weekly: &'static str,
     pub cadence_monthly: &'static str,
+    pub applied_at: &'static str,
+    pub undo_commands: &'static str,
+    pub running_checkup: &'static str,
+    pub pdf_written: &'static str,
+    pub html_written: &'static str,
+    pub report_written: &'static str,
+    pub deep_header: &'static str,
+    pub deep_unavailable: &'static str,
+    pub deep_needs_key: &'static str,
 }
+
+/// Nouns the tools count, in the form the number demands in each language.
+pub const FINDINGS: CountedNoun = CountedNoun {
+    en_one: "finding",
+    en_many: "findings",
+    ar_one: "نتيجة",
+    ar_two: "نتيجتان",
+    ar_many: "نتائج",
+};
+pub const ALERTS: CountedNoun = CountedNoun {
+    en_one: "alert",
+    en_many: "alerts",
+    ar_one: "تنبيه",
+    ar_two: "تنبيهان",
+    ar_many: "تنبيهات",
+};
 
 /// The chrome for those commands, in `lang`.
 pub fn tools(lang: Lang) -> &'static Tools {
@@ -139,14 +163,12 @@ pub fn tools(lang: Lang) -> &'static Tools {
             scope_network: "network",
             scope_localhost: "localhost",
             health_score: "Health score:",
-            alerts: "alert(s).",
             no_history_location:
                 "No history location available (neither HOME nor XDG_STATE_HOME is set).",
             no_history_yet:
                 "No history yet. Run `sysmedic monitor` or enable `sysmedic schedule daily`.",
             history_title: "Health-score history",
             trend_since_first: "Trend since first record:",
-            findings_count: "finding(s)",
             schedule_enabled: "Scheduled checkups. See status with `systemctl --user list-timers`.",
             schedule_not_activated: "timer units installed, but they could not be activated here \
                                      (no user systemd session). On your desktop run:",
@@ -156,6 +178,16 @@ pub fn tools(lang: Lang) -> &'static Tools {
             cadence_daily: "daily",
             cadence_weekly: "weekly",
             cadence_monthly: "monthly",
+            applied_at: "Applied:",
+            undo_commands: "Commands that will run:",
+            running_checkup: "Running SysMedic checkup...",
+            pdf_written: "PDF report written to",
+            html_written: "HTML report written to",
+            report_written: "Report written to",
+            deep_header: "Deep explanation",
+            deep_unavailable: "Deep explanation unavailable; showed the offline answer above.",
+            deep_needs_key: "--deep needs a Claude API key. Set ANTHROPIC_API_KEY to enable it \
+                             (optionally SYSMEDIC_LLM_MODEL to pick a model).",
         },
         Lang::Ar => &Tools {
             no_fixes: "لا حاجة لأي إصلاح — لا شيء يُوصف.",
@@ -187,13 +219,11 @@ pub fn tools(lang: Lang) -> &'static Tools {
             scope_network: "الشبكة",
             scope_localhost: "محلي",
             health_score: "الدرجة الصحية:",
-            alerts: "تنبيه.",
             no_history_location: "لا يوجد مكان لحفظ السجل (لا HOME ولا XDG_STATE_HOME مضبوط).",
             no_history_yet:
                 "لا يوجد سجل بعد. شغّل ‎`sysmedic monitor`‎ أو فعّل ‎`sysmedic schedule daily`‎.",
             history_title: "سجل الدرجة الصحية",
             trend_since_first: "التغيّر منذ أول تسجيل:",
-            findings_count: "نتيجة",
             schedule_enabled: "جُدولت الفحوص. اعرض الحالة بـ ‎`systemctl --user list-timers`‎.",
             schedule_not_activated: "رُكِّبت وحدات المؤقّت، لكن تعذّر تفعيلها هنا (لا توجد جلسة \
                                      systemd للمستخدم). على جهازك المكتبي نفّذ:",
@@ -203,6 +233,16 @@ pub fn tools(lang: Lang) -> &'static Tools {
             cadence_daily: "يومية",
             cadence_weekly: "أسبوعية",
             cadence_monthly: "شهرية",
+            applied_at: "طُبّق في:",
+            undo_commands: "الأوامر التي ستُنفَّذ:",
+            running_checkup: "جارٍ فحص SysMedic...",
+            pdf_written: "كُتب تقرير PDF في",
+            html_written: "كُتب تقرير HTML في",
+            report_written: "كُتب التقرير في",
+            deep_header: "شرح معمّق",
+            deep_unavailable: "الشرح المعمّق غير متاح؛ عُرض الجواب الأوفلاين أعلاه.",
+            deep_needs_key: "يحتاج ‎--deep‎ إلى مفتاح Claude API. اضبط ‎ANTHROPIC_API_KEY‎ \
+                             لتفعيله (واختيارياً ‎SYSMEDIC_LLM_MODEL‎ لاختيار النموذج).",
         },
     }
 }

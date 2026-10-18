@@ -103,6 +103,45 @@ fn preview_labels(lang: Lang) -> PreviewLabels {
 }
 
 impl FixPlan {
+    /// A digest of exactly what this plan would run.
+    ///
+    /// The preview is built from an unprivileged snapshot when the user
+    /// looks at it; the privileged helper rebuilds the plan from a root
+    /// snapshot when the user confirms. Those are two different snapshots
+    /// taken at two different times with two different sets of permissions,
+    /// so "the same plan drives the preview and the run" only held by luck.
+    /// The caller passes this digest along with the fix id, and the helper
+    /// refuses when the plan it rebuilt would run anything else — the user
+    /// then re-reads a fresh preview instead of consenting to one thing and
+    /// getting another.
+    ///
+    /// Covers the commands only (program and arguments, in order): that is
+    /// what runs. The description can legitimately differ in wording between
+    /// languages or carry a size that changed by a few megabytes.
+    pub fn fingerprint(&self) -> String {
+        use sha2::{Digest as _, Sha256};
+        let mut hasher = Sha256::new();
+        for command in &self.commands {
+            hasher.update(command.program.as_bytes());
+            hasher.update(b"\0");
+            for arg in &command.args {
+                hasher.update(arg.as_bytes());
+                hasher.update(b"\0");
+            }
+            hasher.update(b"\n");
+        }
+        format!("{:x}", hasher.finalize())
+    }
+
+    /// Whether `s` has the shape of a [`FixPlan::fingerprint`]: exactly 64
+    /// lowercase hex digits. The helper checks this before any privileged
+    /// work, so the one new argument it accepts is as constrained as the id.
+    pub fn is_fingerprint(s: &str) -> bool {
+        s.len() == 64
+            && s.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    }
+
     /// Render the plan as the confirmation text a user must read before
     /// approving: what happens, reversibility, commands and affected paths.
     pub fn preview(&self) -> String {
@@ -164,6 +203,56 @@ mod tests {
         let c = FixCommand::new("apt-get", &["clean"]);
         assert_eq!(c.display(), "apt-get clean");
         assert_eq!(FixCommand::new("snap", &[]).display(), "snap");
+    }
+
+    #[test]
+    fn fingerprint_changes_with_the_commands_and_nothing_else() {
+        let mut plan = FixPlan {
+            id: "fix.enable_ufw".into(),
+            title: LocalizedText::new("Enable the firewall", "تفعيل الجدار الناري"),
+            description: LocalizedText::new("Turns on ufw.", "يشغّل ufw."),
+            commands: vec![FixCommand::new("ufw", &["--force", "enable"])],
+            affected_paths: vec!["/etc/ufw".into()],
+            reversible: true,
+            undo: vec![FixCommand::new("ufw", &["disable"])],
+            restore: None,
+            risk: Severity::Low,
+            needs_root: true,
+        };
+        let original = plan.fingerprint();
+        assert!(FixPlan::is_fingerprint(&original), "{original}");
+
+        // Wording that may differ between the preview and the helper's
+        // rebuild (a size that moved, a translation) must not invalidate it.
+        plan.description = LocalizedText::new("Turns on ufw (2.1 GiB).", "…");
+        assert_eq!(plan.fingerprint(), original);
+
+        // A different command set is a different plan, however small the
+        // difference — an extra allow rule is exactly the case that matters.
+        plan.commands
+            .insert(0, FixCommand::new("ufw", &["allow", "22/tcp"]));
+        assert_ne!(plan.fingerprint(), original);
+
+        // Argument boundaries are part of the digest: `a b` and `ab` differ.
+        let a = FixPlan {
+            commands: vec![FixCommand::new("x", &["a", "b"])],
+            ..plan.clone()
+        };
+        let b = FixPlan {
+            commands: vec![FixCommand::new("x", &["ab"])],
+            ..plan.clone()
+        };
+        assert_ne!(a.fingerprint(), b.fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_shape_is_strict() {
+        assert!(FixPlan::is_fingerprint(&"a".repeat(64)));
+        assert!(!FixPlan::is_fingerprint(&"A".repeat(64)));
+        assert!(!FixPlan::is_fingerprint(&"a".repeat(63)));
+        assert!(!FixPlan::is_fingerprint(&"g".repeat(64)));
+        assert!(!FixPlan::is_fingerprint("fix.enable_ufw; rm -rf /"));
+        assert!(!FixPlan::is_fingerprint(""));
     }
 
     #[test]

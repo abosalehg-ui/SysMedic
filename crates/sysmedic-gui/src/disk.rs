@@ -9,16 +9,22 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use adw::prelude::*;
-use gtk::glib;
+use gtk::{glib, pango};
+use sysmedic_core::lang::isolate;
 use sysmedic_diskscan::{human_size, squarify, Node, Rect, ScanObserver};
 use sysmedic_knowledge::Lang;
 
-use crate::viewmodel::Strings;
+use crate::viewmodel::{Strings, ENTRIES};
 
 /// How many top-level entries to show as treemap tiles.
 const MAX_TILES: usize = 60;
 /// How many entries the accessible list below the treemap shows.
 const MAX_LIST_ROWS: usize = 8;
+/// Padding between a tile's edge and its label.
+const LABEL_INSET: f64 = 6.0;
+/// Pango font descriptions for the tile name and its size.
+const LABEL_FONT: &str = "Sans Bold 9";
+const SIZE_FONT: &str = "Sans 8";
 
 /// A small curated palette (GNOME palette shades) instead of arbitrary
 /// hash-derived HSL: the old saturated candy colors clashed with the
@@ -95,8 +101,10 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
     // Controls: choose a folder, and stop a running scan.
     let choose = gtk::Button::from_icon_name("folder-open-symbolic");
     choose.set_tooltip_text(Some(strings.disk_choose_folder));
+    choose.update_property(&[gtk::accessible::Property::Label(strings.disk_choose_folder)]);
     let cancel = gtk::Button::from_icon_name("process-stop-symbolic");
     cancel.set_tooltip_text(Some(strings.disk_cancel));
+    cancel.update_property(&[gtk::accessible::Property::Label(strings.disk_cancel)]);
     cancel.add_css_class("destructive-action");
     cancel.set_visible(false);
 
@@ -147,9 +155,9 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
         let selection = selection.clone();
         move |widget, cr, width, height| {
             let drawn = draw_treemap(
+                widget,
                 cr,
-                width,
-                height,
+                (width, height),
                 tree.borrow().as_ref(),
                 *selection.borrow(),
                 widget.has_focus(),
@@ -247,13 +255,21 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
     /// The label used to be a fixed "Scanning your home folder…", which stayed
     /// on screen after the user picked a different folder — and the progress
     /// counter appended a bare number to it ("…184320") with no unit.
+    ///
+    /// The path is bidi-isolated: inside an Arabic sentence the leading `/`
+    /// of `/home/user` detached and the segments reordered, the same thing
+    /// the knowledge templates isolate their values against.
     fn scanning_label(lang: Lang, path: &std::path::Path, visited: u64) -> String {
         let strings = Strings::for_lang(lang);
-        let head = format!("{} {}…", strings.disk_scanning_path, path.display());
+        let head = format!(
+            "{} {}…",
+            strings.disk_scanning_path,
+            isolate(&path.display().to_string())
+        );
         if visited == 0 {
             head
         } else {
-            format!("{head} {visited} {}", strings.disk_entries)
+            format!("{head} {}", ENTRIES.render(visited, lang))
         }
     }
 
@@ -341,7 +357,7 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
                             };
                             subtitle.set_text(&format!(
                                 "{prefix}{} — {}",
-                                shown.display(),
+                                isolate(&shown.display().to_string()),
                                 human_size(node.size)
                             ));
                             while let Some(row) = list.first_child() {
@@ -436,9 +452,9 @@ pub fn disk_page(lang: Lang) -> gtk::Box {
 /// Draw the treemap and return the tiles, so the keyboard handler can address
 /// them by index and the focus ring lands on the right rectangle.
 fn draw_treemap(
+    widget: &gtk::DrawingArea,
     cr: &gtk::cairo::Context,
-    width: i32,
-    height: i32,
+    (width, height): (i32, i32),
     tree: Option<&Node>,
     selected: Option<usize>,
     focused: bool,
@@ -478,21 +494,36 @@ fn draw_treemap(
         cr.set_line_width(1.0);
         let _ = cr.stroke();
 
-        // Label the tile if it is large enough to read.
+        // Label the tile if it is large enough to read. Pango, not cairo's
+        // toy text API: that one has no shaping and no bidi, so the Arabic
+        // XDG folders (`المستندات`, `التنزيلات`, `الصور`) — the biggest
+        // things in an Arabic home directory — rendered as disconnected,
+        // reversed glyphs. The layout is also ellipsized to the tile and
+        // clipped, so a long name no longer runs across its neighbours.
         if tile.rect.w > 64.0 && tile.rect.h > 30.0 {
             let (tr, tg, tb) = text_color_for((r, g, b));
             cr.set_source_rgb(tr, tg, tb);
-            cr.select_font_face(
-                "sans-serif",
-                gtk::cairo::FontSlant::Normal,
-                gtk::cairo::FontWeight::Bold,
-            );
-            cr.set_font_size(12.0);
-            cr.move_to(tile.rect.x + 6.0, tile.rect.y + 18.0);
-            let _ = cr.show_text(&tile.label);
-            cr.set_font_size(10.0);
-            cr.move_to(tile.rect.x + 6.0, tile.rect.y + 32.0);
-            let _ = cr.show_text(&human_size(tile.size));
+            cr.save().ok();
+            cr.rectangle(tile.rect.x, tile.rect.y, tile.rect.w, tile.rect.h);
+            cr.clip();
+            let text_width = ((tile.rect.w - 2.0 * LABEL_INSET) * pango::SCALE as f64) as i32;
+            for (text, font, dy) in [
+                (tile.label.clone(), LABEL_FONT, 4.0),
+                (human_size(tile.size), SIZE_FONT, 20.0),
+            ] {
+                let layout = widget.create_pango_layout(Some(&text));
+                layout.set_font_description(Some(&pango::FontDescription::from_string(font)));
+                layout.set_width(text_width);
+                layout.set_ellipsize(pango::EllipsizeMode::End);
+                layout.set_alignment(if rtl {
+                    pango::Alignment::Right
+                } else {
+                    pango::Alignment::Left
+                });
+                cr.move_to(tile.rect.x + LABEL_INSET, tile.rect.y + dy);
+                pangocairo::functions::show_layout(cr, &layout);
+            }
+            cr.restore().ok();
         }
 
         // A visible focus ring — keyboard focus that cannot be seen is not

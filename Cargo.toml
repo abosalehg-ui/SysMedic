@@ -37,6 +37,10 @@ clap = { version = "4", features = ["derive"] }
 owo-colors = { version = "4", features = ["supports-colors"] }
 humantime = "2"
 ureq = { version = "2", default-features = false, features = ["tls"] }
+# The plan fingerprint the privileged helper checks before running anything:
+# a hash the user's consent is tied to, so it is the audited RustCrypto
+# implementation rather than something hand-rolled in a root process.
+sha2 = "0.10"
 
 [profile.release]
 lto = "thin"

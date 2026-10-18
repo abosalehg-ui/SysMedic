@@ -42,13 +42,20 @@ pub fn evaluate_in(snapshot: &Snapshot, lang: Lang) -> Vec<Alert> {
                     },
                     title: match lang {
                         Lang::En => format!("Disk almost full: {}", disk.mount_point),
-                        Lang::Ar => format!("القرص شارف على الامتلاء: {}", disk.mount_point),
+                        Lang::Ar => format!(
+                            "القرص شارف على الامتلاء: {}",
+                            crate::lang::isolate(&disk.mount_point)
+                        ),
                     },
                     body: match lang {
                         Lang::En => format!("{used:.0}% used on {}", disk.mount_point),
-                        Lang::Ar => {
-                            format!("استُخدم {used:.0}% من {}", disk.mount_point)
-                        }
+                        // ٪ (U+066A), never `%`: the typography policy every
+                        // finding follows, so the notification and the finding
+                        // for the same disk no longer disagree.
+                        Lang::Ar => format!(
+                            "استُخدم {used:.0}٪ من {}",
+                            crate::lang::isolate(&disk.mount_point)
+                        ),
                     },
                 });
             }
@@ -56,24 +63,28 @@ pub fn evaluate_in(snapshot: &Snapshot, lang: Lang) -> Vec<Alert> {
     }
 
     if let Some(thermal) = &snapshot.thermal {
-        if let Some(hottest) = thermal.hottest() {
-            if hottest.temp_c >= thresholds::thermal::HIGH_C {
+        // Each sensor against its own limit (a GPU hotspot's 110 °C, an
+        // NVMe's vendor threshold), not the hottest against one fixed number.
+        if let Some((sensor, severity)) = thermal.worst() {
+            if severity >= Severity::High {
+                let (_, limit) = sensor.limits();
                 alerts.push(Alert {
                     id: "alert.overheating",
-                    urgency: if hottest.temp_c >= thresholds::thermal::CRITICAL_C {
-                        Severity::Critical
-                    } else {
-                        Severity::High
-                    },
+                    urgency: severity,
                     title: match lang {
                         Lang::En => "System overheating".to_string(),
                         Lang::Ar => "ارتفاع حرارة النظام".to_string(),
                     },
                     body: match lang {
-                        Lang::En => format!("{} at {:.0}°C", hottest.name, hottest.temp_c),
-                        Lang::Ar => {
-                            format!("{} عند {:.0}°م", hottest.name, hottest.temp_c)
-                        }
+                        Lang::En => format!(
+                            "{} at {:.0}°C (limit {limit:.0}°C)",
+                            sensor.name, sensor.temp_c
+                        ),
+                        Lang::Ar => format!(
+                            "{} عند {:.0}°م (الحدّ {limit:.0}°م)",
+                            crate::lang::isolate(&sensor.name),
+                            sensor.temp_c
+                        ),
                     },
                 });
             }
@@ -92,7 +103,7 @@ pub fn evaluate_in(snapshot: &Snapshot, lang: Lang) -> Vec<Alert> {
                 },
                 body: match lang {
                     Lang::En => format!("Only {avail:.0}% of RAM available"),
-                    Lang::Ar => format!("لم يتبقَّ سوى {avail:.0}% من الذاكرة"),
+                    Lang::Ar => format!("لم يتبقَّ سوى {avail:.0}٪ من الذاكرة"),
                 },
             });
         }
@@ -168,7 +179,9 @@ mod tests {
         assert_eq!(en[0].title, "Low memory");
         let ar = evaluate_in(&s, Lang::Ar);
         assert_eq!(ar[0].title, "الذاكرة منخفضة");
-        assert!(ar[0].body.contains('%'));
+        // The Arabic percent sign, as the typography policy requires.
+        assert!(ar[0].body.contains('٪'), "{}", ar[0].body);
+        assert!(!ar[0].body.contains('%'));
         // Same condition, same id — only the presentation differs.
         assert_eq!(en[0].id, ar[0].id);
     }
@@ -186,6 +199,7 @@ mod tests {
                 sensors: vec![ThermalSensor {
                     name: "pkg".into(),
                     temp_c: 99.0, // Critical
+                    ..Default::default()
                 }],
             }),
             ..Default::default()

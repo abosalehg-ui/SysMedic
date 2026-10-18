@@ -72,8 +72,10 @@ pub fn append(path: impl AsRef<Path>, entry: &HistoryEntry) -> Result<(), Histor
     }
     let mut opts = std::fs::OpenOptions::new();
     opts.create(true).append(true);
-    // Owner-only, consistent with the journal: history leaks scores and
-    // finding counts, and there is no reason for other users to read it.
+    // Owner-only: history leaks scores and finding counts, and there is no
+    // reason for other users to read it. (The fix journal next to it is
+    // deliberately world-readable — it needs integrity, not secrecy, and the
+    // unprivileged UI must read what the root helper wrote.)
     // `O_NOFOLLOW` refuses a pre-planted symlink at this path, matching the
     // protection the transaction journal already had.
     #[cfg(unix)]

@@ -5,6 +5,89 @@
 
 ### Security
 
+- **What the user reads is what runs.** The fix preview is built from an
+  unprivileged snapshot at checkup time; the helper rebuilt the plan from a
+  root snapshot at confirm time, and nothing held the two together (a
+  `sshd_config.d` drop-in readable only by root, a journal size that differs
+  with privileges, a window left open for hours). The GUI and CLI now pass
+  the previewed plan's fingerprint (SHA-256 over its commands) with the fix
+  id, and the helper refuses — "the system changed since the preview" — when
+  the plan it rebuilt would run anything else. The argument is validated for
+  shape before any privileged work, like the id.
+- **Enabling the firewall respects SSH on any port.** The SSH allowance
+  added in the previous round knew only about 22/tcp. With `Port 2222` in
+  `sshd_config` — one of the most common hardening steps — the fix allowed a
+  port nobody listened on, enabled `deny incoming`, and locked the
+  administrator out while its preview promised the opposite. The security
+  collector now reads every `Port` directive (`SecurityInfo::ssh_ports`), the
+  fix allows each exposed SSH port and names them, and `undo` removes exactly
+  those (each journal value validated on its own).
+- **A corrupt fix journal no longer disables every fix.** It is moved to
+  `journal.json.corrupt-<time>` (the audit record is kept) and a fresh one
+  started; an unprivileged reader that cannot move it still sees the error.
+- **Desktop notifications no longer announce "overheating" for a GPU under
+  load.** See *Changed*.
+
+### Fixed
+
+- `flatpak.unused_runtimes` counted every extension — `.Locale`,
+  `.GL.default`, `.openh264`, an app's own `.Locale` — as an unused runtime, so
+  it fired on every desktop with one Flatpak app and the consent dialog listed
+  things `flatpak uninstall --unused` would never remove. Extensions now count
+  as needed by the id they extend, and the fix runs `--system` (all a root
+  helper can touch) and says so.
+- `storage.snap_old_revisions` and `fix.snap_retain` counted every disabled
+  revision, but `refresh.retain=2` keeps one per snap: the finding never
+  cleared and the fix stayed on offer — and was journalled — forever after
+  being applied. Both now use the excess beyond one rollback per snap, and
+  the fix is not offered once `refresh.retain` is at the target.
+- The GUI's failure dialog for a fix that *ran* and failed said
+  "Authorization was cancelled or failed" above the helper's own words. It
+  now says the fix ran but did not complete.
+- `sysmedic undo` previewed a title; it now shows when the fix was applied
+  and the exact commands that will run, as apply does. The GUI undo dialog
+  shows the same.
+- Arabic folder names in the Disk Usage treemap were drawn as disconnected,
+  reversed glyphs (cairo's toy text API has no shaping or bidi); labels are
+  laid out with Pango, ellipsized to the tile and clipped.
+- The health-history strip rendered right-to-left in Arabic while its tooltip
+  said "newest on the right"; the strip is now isolated left-to-right.
+- Paths in the disk page subtitle, the export toast and desktop alerts are
+  bidi-isolated; alerts use `٪` like every finding; Arabic counts
+  ("5 نتائج", "نتيجتان") take the form the number demands instead of
+  "5 نتيجة".
+- `--lang` on the CLI did not reach the privileged helper (pkexec strips the
+  environment), so an Arabic `sysmedic fix … --yes` ended with an English
+  line from it. The helper accepts a validated trailing `--lang=en|ar` from
+  the CLI and the GUI.
+- "Running SysMedic checkup...", "Report written to", the PDF/HTML fallback
+  lines and the `--deep` messages now follow `--lang` like the rest of the
+  terminal.
+- Inside a Flatpak sandbox the GUI no longer offers "Apply fix" buttons that
+  can only end in "the fix helper is not installed"; it says once that fixes
+  need the `.deb`.
+- The refresh, choose-folder and stop-scan icon buttons have accessible
+  names; the launcher entry has Arabic `Keywords`.
+
+### Changed
+
+- **Thermal findings are judged against each sensor's own limit.** One fixed
+  85/95 °C pair on the hottest sensor turned a GPU hotspot at 100 °C (limit
+  110) into a Critical finding that capped the score at 59 and sent a critical
+  notification on every scheduled run. Sensors now carry their driver's
+  `_crit`/`_max` (or thermal-zone trip points) and the finding names the
+  limit; the fixed pair applies only to sensors that publish none.
+- `services.failed` was High for any count, so `fwupd-refresh.service` alone
+  capped a healthy machine at 74 "Fair". Known-noisy units are Low, one or
+  two real failures Medium, three or more High.
+- `sysmedic` exits 3 on its own failures; 1 and 2 stay reserved for
+  `--exit-code` verdicts. `--help` documents the codes.
+- The default deep-explanation model is `claude-opus-5-5` (the current Opus,
+  at a lower price than `claude-opus-5`).
+- `fixes::undo_commands` (no callers) and the GUI's `FixOutcome` wrapper
+  (a bool in an enum) are gone; the GUI launches the helper from one
+  `run_helper`.
+
 - **Enabling the firewall no longer locks a remote administrator out.**
   `fix.enable_ufw` ran `ufw --force enable` with ufw's default `deny incoming`
   policy and nothing else. On a machine being administered over SSH — which

@@ -84,7 +84,7 @@
     remedy: "Clean dust and vents, check that fans spin, avoid soft surfaces blocking airflow, renew thermal paste on old machines."
     risk_if_ignored: "Chronic throttling and a real risk of hardware damage or abrupt shutdowns."
   ar:
-    title: "المستشعر {0} يسجّل {1}°م"
+    title: "المستشعر {0} يسجّل {1}°م (الحدّ {2}°م)"
     summary: "النظام يعمل بحرارة مرتفعة؛ استمرار الحرارة العالية يخنق الأداء ويقصّر عمر العتاد."
     cause: "تهوية سيئة، غبار متراكم، معجون حراري متدهور، أو حمل عمل ثقيل مستمر."
     dangerous: "نعم فوق ~90°م باستمرار: يخفّض المعالج سرعته ويشيخ العتاد أسرع."
@@ -276,8 +276,8 @@
     remedy: "Run sudo snap set system refresh.retain=2, then remove disabled revisions with snap remove --revision."
     risk_if_ignored: "Only wasted disk space that grows with every update."
   ar:
-    title: "{0} من مراجعات snap المعطّلة محفوظة على القرص"
-    summary: "يحتفظ snapd بمراجعات قديمة من كل حزمة بعد التحديثات."
+    title: "{0} من مراجعات snap القديمة محفوظة على القرص فوق نسخة التراجع"
+    summary: "يحتفظ snapd بمراجعات قديمة من كل حزمة بعد التحديثات؛ واحدة لكل حزمة للتراجع، والباقي مساحة مهدرة."
     cause: "يحتفظ snapd بالمراجعات السابقة لكل snap بعد التحديثات (افتراضيًا حتى 3)."
     dangerous: "لا — مجرد استهلاك قرص."
     impact: "كل مراجعة قديمة نسخة كاملة؛ التطبيقات الكبيرة تهدر غيغابايتات."

@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 
 use sysmedic_core::snapshot::{ThermalInfo, ThermalSensor};
 use sysmedic_core::{Collector, Snapshot};
@@ -37,6 +38,13 @@ fn plausible(temp_c: f64) -> bool {
     PLAUSIBLE_C.contains(&temp_c)
 }
 
+/// A millidegree sysfs value as °C.
+fn read_millidegrees(path: impl AsRef<Path>) -> Option<f64> {
+    util::read_trimmed(path)
+        .and_then(|v| v.parse::<f64>().ok())
+        .map(|milli| milli / 1000.0)
+}
+
 fn read_thermal_zones() -> Vec<ThermalSensor> {
     let Ok(entries) = fs::read_dir("/sys/class/thermal") else {
         return Vec::new();
@@ -46,13 +54,36 @@ fn read_thermal_zones() -> Vec<ThermalSensor> {
         .filter(|e| e.file_name().to_string_lossy().starts_with("thermal_zone"))
         .filter_map(|e| {
             let name = util::read_trimmed(e.path().join("type"))?;
-            let milli: f64 = util::read_trimmed(e.path().join("temp"))?.parse().ok()?;
+            let temp_c = read_millidegrees(e.path().join("temp"))?;
+            let (max_c, crit_c) = zone_trip_points(&e.path());
             Some(ThermalSensor {
                 name,
-                temp_c: milli / 1000.0,
+                temp_c,
+                crit_c,
+                max_c,
             })
         })
         .collect()
+}
+
+/// The (hot, critical) trip points of a thermal zone, from its
+/// `trip_point_<n>_type` / `trip_point_<n>_temp` pairs. The kernel names the
+/// shutdown threshold `critical` and the throttling one `hot` (or `passive`).
+fn zone_trip_points(zone: &Path) -> (Option<f64>, Option<f64>) {
+    let mut hot = None;
+    let mut critical = None;
+    for n in 0..16 {
+        let Some(kind) = util::read_trimmed(zone.join(format!("trip_point_{n}_type"))) else {
+            break;
+        };
+        let temp = read_millidegrees(zone.join(format!("trip_point_{n}_temp")));
+        match kind.as_str() {
+            "critical" => critical = critical.or(temp),
+            "hot" | "passive" => hot = hot.or(temp),
+            _ => {}
+        }
+    }
+    (hot, critical)
 }
 
 fn read_hwmon() -> Vec<ThermalSensor> {
@@ -70,16 +101,23 @@ fn read_hwmon() -> Vec<ThermalSensor> {
         };
         for file in files.flatten() {
             let fname = file.file_name().to_string_lossy().into_owned();
-            if fname.starts_with("temp") && fname.ends_with("_input") {
-                if let Some(milli) =
-                    util::read_trimmed(file.path()).and_then(|v| v.parse::<f64>().ok())
-                {
-                    sensors.push(ThermalSensor {
-                        name: format!("{chip}/{}", fname.trim_end_matches("_input")),
-                        temp_c: milli / 1000.0,
-                    });
-                }
-            }
+            let Some(stem) = fname
+                .strip_suffix("_input")
+                .filter(|s| s.starts_with("temp"))
+            else {
+                continue;
+            };
+            let Some(temp_c) = read_millidegrees(file.path()) else {
+                continue;
+            };
+            // The driver's own limits for this reading, when it publishes
+            // them: `temp2_crit` for `temp2_input`, and so on.
+            sensors.push(ThermalSensor {
+                name: format!("{chip}/{stem}"),
+                temp_c,
+                crit_c: read_millidegrees(dir.join(format!("{stem}_crit"))),
+                max_c: read_millidegrees(dir.join(format!("{stem}_max"))),
+            });
         }
     }
     sensors
@@ -96,5 +134,44 @@ mod tests {
         assert!(!plausible(127.0)); // stuck sensor
         assert!(!plausible(0.0)); // disconnected
         assert!(!plausible(-40.0)); // bogus
+    }
+
+    #[test]
+    fn reads_a_sensor_with_its_own_limits_from_a_hwmon_like_directory() {
+        // A fake hwmon chip laid out the way the kernel does it: the limits
+        // sit next to the reading under the same `tempN_` stem.
+        let dir = tempfile::tempdir().unwrap();
+        let chip = dir.path();
+        fs::write(chip.join("temp2_input"), "100000\n").unwrap();
+        fs::write(chip.join("temp2_crit"), "110000\n").unwrap();
+        fs::write(chip.join("temp2_label"), "junction\n").unwrap();
+
+        let stem = "temp2";
+        let sensor = ThermalSensor {
+            name: format!("amdgpu/{stem}"),
+            temp_c: read_millidegrees(chip.join(format!("{stem}_input"))).unwrap(),
+            crit_c: read_millidegrees(chip.join(format!("{stem}_crit"))),
+            max_c: read_millidegrees(chip.join(format!("{stem}_max"))),
+        };
+        assert_eq!(sensor.temp_c, 100.0);
+        assert_eq!(sensor.crit_c, Some(110.0));
+        assert_eq!(sensor.max_c, None);
+        // 100 °C on a part whose limit is 110 is High, not the Critical the
+        // fixed 95 °C cut-off produced.
+        assert_eq!(sensor.severity(), Some(sysmedic_core::Severity::High));
+    }
+
+    #[test]
+    fn zone_trip_points_pick_hot_and_critical() {
+        let dir = tempfile::tempdir().unwrap();
+        let zone = dir.path();
+        fs::write(zone.join("trip_point_0_type"), "critical\n").unwrap();
+        fs::write(zone.join("trip_point_0_temp"), "105000\n").unwrap();
+        fs::write(zone.join("trip_point_1_type"), "passive\n").unwrap();
+        fs::write(zone.join("trip_point_1_temp"), "95000\n").unwrap();
+        assert_eq!(zone_trip_points(zone), (Some(95.0), Some(105.0)));
+        // A zone without trip points yields nothing, not a panic.
+        let empty = tempfile::tempdir().unwrap();
+        assert_eq!(zone_trip_points(empty.path()), (None, None));
     }
 }

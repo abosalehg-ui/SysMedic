@@ -77,13 +77,34 @@ pub struct Journal {
 
 impl Journal {
     /// Load the journal at `path`, or an empty one if it does not exist.
+    ///
+    /// A journal that does not parse is **moved aside** (to
+    /// `journal.json.corrupt-<unix time>`) and an empty one started, with a
+    /// line on stderr saying so. Refusing to load it meant the privileged
+    /// helper refused every `apply` and `undo` from then on, and the only way
+    /// out was deleting the file by hand as root — the audit record is kept
+    /// under the new name, nothing is lost, and fixes keep working. When the
+    /// file cannot be moved (an unprivileged reader looking at the system
+    /// journal, say) the corruption is reported as before.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, JournalError> {
         let path = path.as_ref().to_path_buf();
         let entries = match std::fs::read_to_string(&path) {
-            Ok(raw) => serde_json::from_str(&raw).map_err(|e| JournalError::Corrupt {
-                path: path.clone(),
-                source: e,
-            })?,
+            Ok(raw) => match serde_json::from_str(&raw) {
+                Ok(entries) => entries,
+                Err(source) => {
+                    let aside = corrupt_sibling(&path);
+                    if std::fs::rename(&path, &aside).is_err() {
+                        return Err(JournalError::Corrupt { path, source });
+                    }
+                    eprintln!(
+                        "sysmedic: the fix journal at {} could not be read ({source}); it was \
+                         moved to {} and a new one started",
+                        path.display(),
+                        aside.display()
+                    );
+                    Vec::new()
+                }
+            },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
             Err(e) => return Err(JournalError::Io { path, source: e }),
         };
@@ -204,6 +225,21 @@ impl Journal {
     }
 }
 
+/// Where a journal that failed to parse is moved: a sibling named after the
+/// moment it was set aside, so repeated corruption never overwrites an
+/// earlier record.
+fn corrupt_sibling(path: &Path) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "journal.json".into());
+    path.with_file_name(format!("{name}.corrupt-{stamp}"))
+}
+
 /// An RFC3339 timestamp for `applied_at`.
 pub fn now_rfc3339() -> String {
     humantime::format_rfc3339_seconds(SystemTime::now()).to_string()
@@ -293,6 +329,33 @@ mod tests {
         assert_eq!(
             std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o644
+        );
+    }
+
+    #[test]
+    fn a_corrupt_journal_is_set_aside_not_fatal() {
+        // The helper must not be wedged for good by one unparseable file:
+        // the record is preserved under a sibling name and a fresh journal
+        // starts, so the next apply (and its write-ahead entry) succeeds.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("journal.json");
+        std::fs::write(&path, "{ this is not json").unwrap();
+
+        let mut j = Journal::load(&path).expect("corruption is recovered from");
+        assert!(j.entries().is_empty());
+        j.record(entry("fix.enable_ufw", true)).unwrap();
+        assert_eq!(Journal::load(&path).unwrap().entries().len(), 1);
+
+        let aside: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("journal.json.corrupt-"))
+            .collect();
+        assert_eq!(aside.len(), 1, "the corrupt file was not kept: {aside:?}");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(&aside[0])).unwrap(),
+            "{ this is not json"
         );
     }
 

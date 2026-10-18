@@ -21,19 +21,23 @@ The security-critical surface is the privileged path:
 
 - `sysmedic-fix-helper` and `sysmedic-fix-helper-destructive` are the only
   components that run as root. Each is launched through **pkexec**/**polkit**
-  under its own action, accepts a fix **id** only — never a command or a
-  serialized plan — and rebuilds the plan from a compiled-in registry, so a
-  compromised unprivileged caller cannot inject commands. Each also refuses
-  the other tier's ids.
+  under its own action, accepts a fix **id** and the **fingerprint** of the
+  previewed plan only — never a command or a serialized plan — and rebuilds
+  the plan from a compiled-in registry, so a compromised unprivileged caller
+  cannot inject commands. The fingerprint (SHA-256 over the plan's commands,
+  validated for shape before any privileged work) makes the helper refuse a
+  rebuilt plan that would run anything other than what the user read. Each
+  helper also refuses the other tier's ids.
 - A helper collects **only the snapshot sections its fix declares**
   (`Fix::needs_collectors`), so applying one fix does not run sixteen external
   tools as root.
 - `undo` likewise rebuilds its commands from the registry keyed on the stored
   fix id, not from the commands recorded in the journal file. The two values
   that do come from the journal — snapd's previous `refresh.retain` and the
-  ufw rule a firewall enable added — are validated (an integer in snapd's
-  range; a `<port>/tcp` spec with the port in range) before a root process
-  substitutes them into an argument.
+  ufw rules a firewall enable added — are validated (an integer in snapd's
+  range; each `<port>/tcp` spec with the port in range, invalid entries
+  dropped individually) before a root process substitutes them into an
+  argument.
 - The transaction journal (`/var/lib/sysmedic/journal.json`) is written
   `0644` in a `0755` directory, both owned by root, via an atomic,
   symlink-safe rename. What it needs is **integrity, not secrecy**: only root

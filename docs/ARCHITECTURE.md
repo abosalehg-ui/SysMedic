@@ -82,15 +82,20 @@ fix **id** only — never a command or a serialized plan — and rebuilds the pl
 itself from a fresh privileged snapshot, so a compromised unprivileged caller
 cannot inject commands. Every fix must present a `FixPlan` (description, exact
 structured commands, affected paths, reversibility, undo commands, risk) before
-the user can confirm; the same plan drives both the preview and the run. Applied
+the user can confirm. The preview is built from an unprivileged snapshot and
+the helper rebuilds the plan from a root snapshot, so the caller also passes
+the preview's **fingerprint** (a SHA-256 over its commands) and the helper
+refuses to run a plan whose commands differ: what the user read is what runs,
+or nothing runs. Applied
 fixes are recorded in a transaction journal (`/var/lib/sysmedic/journal.json`)
 that powers undo. The fix engine itself is pure and unit-tested through a
 `CommandRunner` seam, so the security-critical logic is verified without
 touching the system.
 
 An on-demand pkexec helper (rather than a resident D-Bus daemon) is the right
-fit for M3: it has no long-running root surface. The resident `sysmedicd`
-service arrives in M5, where the scheduler genuinely needs a persistent process.
+fit: it has no long-running root surface. Scheduling (M5) turned out not to
+need a resident process either — it runs on systemd user timers — so there is
+no daemon at all.
 
 ### AI Explain
 Offline-first: the embedded knowledge base answers the five questions (cause,
@@ -99,7 +104,7 @@ dangerous?, impact, remedy, risk-if-ignored) with zero network access. The
 explanations — strictly opt-in. `LlmExplainer` (in `sysmedic-knowledge::llm`)
 implements it against the Claude Messages API: `sysmedic explain <id> --deep`
 enables it only when `ANTHROPIC_API_KEY` is set (`SYSMEDIC_LLM_MODEL` overrides
-the model, default `claude-opus-4-8`). It sends only the finding id and its
+the model, default `claude-opus-5-5`). It sends only the finding id and its
 evidence text — never files or credentials — and degrades silently to the
 offline answer on any error. Rust has no official Anthropic SDK, so it speaks
 the API over raw HTTP; the network call sits behind an `HttpTransport` trait, so
