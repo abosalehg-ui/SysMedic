@@ -242,8 +242,8 @@ impl Fix for AutoremoveKernels {
                     package_list(removed)
                 ),
                 format!(
-                    "\n\nسيزيل {} حزمة إجمالاً: {}.",
-                    removed.len(),
+                    "\n\nسيزيل {} إجمالاً: {}.",
+                    sysmedic_core::lang::count_ar(removed.len() as u64, "حزمة", "حزمتين", "حزم"),
                     package_list(removed)
                 ),
             )
@@ -719,16 +719,6 @@ pub fn find(id: &str) -> Option<&'static dyn Fix> {
     REGISTRY.iter().find(|f| f.id() == id).map(|b| b.as_ref())
 }
 
-/// The compiled-in undo commands for a fix id, or `None` if the id is unknown.
-/// A known but irreversible fix yields `Some(vec![])`.
-///
-/// `undo` uses this instead of the commands stored in the journal, so the
-/// privileged helper trusts only the fix id — mirroring how `apply` rebuilds
-/// the plan from the id rather than accepting commands from its caller.
-pub fn undo_commands(id: &str) -> Option<Vec<FixCommand>> {
-    Some(find(id)?.undo())
-}
-
 /// Every fix id, for validation in the privileged helper.
 ///
 /// **Derived** from the registry rather than written out by hand. The previous
@@ -849,16 +839,16 @@ mod tests {
     #[test]
     fn undo_commands_come_from_the_registry() {
         assert_eq!(
-            undo_commands("fix.enable_ufw").unwrap()[0].display(),
+            find("fix.enable_ufw").unwrap().undo()[0].display(),
             "ufw disable"
         );
         assert_eq!(
-            undo_commands("fix.snap_retain").unwrap()[0].display(),
+            find("fix.snap_retain").unwrap().undo()[0].display(),
             "snap set system refresh.retain=3"
         );
         // Known but irreversible → empty; unknown id → None (helper refuses it).
-        assert!(undo_commands("fix.apt_clean").unwrap().is_empty());
-        assert!(undo_commands("fix.nonexistent").is_none());
+        assert!(find("fix.apt_clean").unwrap().undo().is_empty());
+        assert!(find("fix.nonexistent").is_none());
     }
 
     #[test]

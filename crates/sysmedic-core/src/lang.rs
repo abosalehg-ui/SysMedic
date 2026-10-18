@@ -94,6 +94,30 @@ pub fn count_ar(n: u64, singular: &str, dual: &str, plural: &str) -> String {
     }
 }
 
+/// A noun that gets counted in both languages, e.g. "finding(s)".
+///
+/// English needs two forms, Arabic three ([`count_ar`]); carrying them
+/// together keeps "5 findings" and "5 نتائج" the same decision in the code.
+#[derive(Debug, Clone, Copy)]
+pub struct CountedNoun {
+    pub en_one: &'static str,
+    pub en_many: &'static str,
+    pub ar_one: &'static str,
+    pub ar_two: &'static str,
+    pub ar_many: &'static str,
+}
+
+impl CountedNoun {
+    /// `n` of this noun, in `lang`.
+    pub fn render(&self, n: u64, lang: Lang) -> String {
+        match lang {
+            Lang::En if n == 1 => format!("1 {}", self.en_one),
+            Lang::En => format!("{n} {}", self.en_many),
+            Lang::Ar => count_ar(n, self.ar_one, self.ar_two, self.ar_many),
+        }
+    }
+}
+
 /// A short piece of user-facing text carried in both supported languages.
 ///
 /// Used where the text is *generated* rather than looked up — chiefly fix-plan
@@ -159,6 +183,22 @@ mod tests {
         assert_eq!(f(10), "10 نتائج");
         assert_eq!(f(11), "11 نتيجة");
         assert_eq!(f(184320), "184320 نتيجة");
+    }
+
+    #[test]
+    fn counted_nouns_render_in_both_languages() {
+        const FINDINGS: CountedNoun = CountedNoun {
+            en_one: "finding",
+            en_many: "findings",
+            ar_one: "نتيجة",
+            ar_two: "نتيجتان",
+            ar_many: "نتائج",
+        };
+        assert_eq!(FINDINGS.render(1, Lang::En), "1 finding");
+        assert_eq!(FINDINGS.render(5, Lang::En), "5 findings");
+        assert_eq!(FINDINGS.render(0, Lang::En), "0 findings");
+        assert_eq!(FINDINGS.render(2, Lang::Ar), "نتيجتان");
+        assert_eq!(FINDINGS.render(5, Lang::Ar), "5 نتائج");
     }
 
     #[test]

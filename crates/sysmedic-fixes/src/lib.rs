@@ -17,7 +17,7 @@ pub mod journal;
 use std::path::PathBuf;
 
 pub use command::{CommandRunner, RealRunner, RecordingRunner};
-pub use fixes::{fix_for_finding, fix_ids, fix_ids_for, tier_of, undo_commands, Fix, FixTier};
+pub use fixes::{fix_for_finding, fix_ids, fix_ids_for, tier_of, Fix, FixTier};
 pub use journal::{EntryState, Journal, JournalEntry, JournalError};
 use sysmedic_core::fix::FixPlan;
 use sysmedic_core::Snapshot;
@@ -148,13 +148,44 @@ pub fn undo(
     })
 }
 
+/// What an `undo` would do right now, for the consent step that precedes it.
+///
+/// Apply shows commands, paths and risk before asking for a password; undo
+/// showed a title. The same privileged change deserves the same preview: when
+/// it was applied (the firewall enabled weeks ago may have rules on it by
+/// now) and exactly what will run.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UndoPreview {
+    pub fix_id: String,
+    /// The fix's title in the requested language.
+    pub title: String,
+    /// RFC3339, as recorded when the fix ran.
+    pub applied_at: String,
+    /// The commands `undo` would run, rebuilt from the registry (never read
+    /// from the journal).
+    pub commands: Vec<sysmedic_core::fix::FixCommand>,
+}
+
+/// The preview of the next `undo`, or `None` when nothing can be undone.
+pub fn undo_preview_in(journal: &Journal, lang: sysmedic_core::Lang) -> Option<UndoPreview> {
+    let (_, entry) = journal.last_undoable()?;
+    let fix = fixes::find(&entry.fix_id);
+    Some(UndoPreview {
+        fix_id: entry.fix_id.clone(),
+        title: match fix {
+            Some(fix) => fix.title().get(lang).to_string(),
+            None => entry.title.clone(),
+        },
+        applied_at: entry.applied_at.clone(),
+        commands: fix
+            .map(|f| f.undo_from(entry.restore.as_deref()))
+            .unwrap_or_default(),
+    })
+}
+
 /// The bilingual title of the fix an `undo` would revert, for previews.
 pub fn undo_title_in(journal: &Journal, lang: sysmedic_core::Lang) -> Option<String> {
-    let (_, entry) = journal.last_undoable()?;
-    Some(match fixes::find(&entry.fix_id) {
-        Some(fix) => fix.title().get(lang).to_string(),
-        None => entry.title.clone(),
-    })
+    undo_preview_in(journal, lang).map(|p| p.title)
 }
 
 /// The `--lang=<tag>` argument the privileged helper accepts as its last
@@ -321,6 +352,36 @@ mod tests {
         assert_eq!(commands.last().unwrap().display(), "ufw disable");
         // Second undo finds nothing left.
         assert!(undo(&runner, &mut journal, sysmedic_core::Lang::En).is_err());
+    }
+
+    #[test]
+    fn the_undo_preview_shows_when_and_what() {
+        let snapshot = Snapshot {
+            security: Some(SecurityInfo {
+                firewall_active: Some(false),
+                firewall_frontend: Some(sysmedic_core::snapshot::FirewallFrontend::Ufw),
+                ssh_ports: vec![22],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let plan = plan("fix.enable_ufw", &snapshot).unwrap();
+        let runner = RecordingRunner::new();
+        let dir = tempfile::tempdir().unwrap();
+        let mut journal = Journal::load(dir.path().join("j.json")).unwrap();
+        apply(&plan, &runner, &mut journal).unwrap();
+
+        let preview = undo_preview_in(&journal, sysmedic_core::Lang::Ar).unwrap();
+        assert_eq!(preview.fix_id, "fix.enable_ufw");
+        assert_eq!(preview.title, "تفعيل الجدار الناري");
+        assert_eq!(preview.applied_at, journal.entries()[0].applied_at);
+        // The commands come from the registry plus the journalled `restore`,
+        // exactly as `undo` itself would run them.
+        let shown: Vec<String> = preview.commands.iter().map(|c| c.display()).collect();
+        assert_eq!(shown, vec!["ufw disable", "ufw delete allow 22/tcp"]);
+
+        journal.mark_undone(0).unwrap();
+        assert!(undo_preview_in(&journal, sysmedic_core::Lang::En).is_none());
     }
 
     #[test]

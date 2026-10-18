@@ -42,13 +42,20 @@ pub fn evaluate_in(snapshot: &Snapshot, lang: Lang) -> Vec<Alert> {
                     },
                     title: match lang {
                         Lang::En => format!("Disk almost full: {}", disk.mount_point),
-                        Lang::Ar => format!("القرص شارف على الامتلاء: {}", disk.mount_point),
+                        Lang::Ar => format!(
+                            "القرص شارف على الامتلاء: {}",
+                            crate::lang::isolate(&disk.mount_point)
+                        ),
                     },
                     body: match lang {
                         Lang::En => format!("{used:.0}% used on {}", disk.mount_point),
-                        Lang::Ar => {
-                            format!("استُخدم {used:.0}% من {}", disk.mount_point)
-                        }
+                        // ٪ (U+066A), never `%`: the typography policy every
+                        // finding follows, so the notification and the finding
+                        // for the same disk no longer disagree.
+                        Lang::Ar => format!(
+                            "استُخدم {used:.0}٪ من {}",
+                            crate::lang::isolate(&disk.mount_point)
+                        ),
                     },
                 });
             }
@@ -96,7 +103,7 @@ pub fn evaluate_in(snapshot: &Snapshot, lang: Lang) -> Vec<Alert> {
                 },
                 body: match lang {
                     Lang::En => format!("Only {avail:.0}% of RAM available"),
-                    Lang::Ar => format!("لم يتبقَّ سوى {avail:.0}% من الذاكرة"),
+                    Lang::Ar => format!("لم يتبقَّ سوى {avail:.0}٪ من الذاكرة"),
                 },
             });
         }
@@ -172,7 +179,9 @@ mod tests {
         assert_eq!(en[0].title, "Low memory");
         let ar = evaluate_in(&s, Lang::Ar);
         assert_eq!(ar[0].title, "الذاكرة منخفضة");
-        assert!(ar[0].body.contains('%'));
+        // The Arabic percent sign, as the typography policy requires.
+        assert!(ar[0].body.contains('٪'), "{}", ar[0].body);
+        assert!(!ar[0].body.contains('%'));
         // Same condition, same id — only the presentation differs.
         assert_eq!(en[0].id, ar[0].id);
     }

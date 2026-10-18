@@ -15,7 +15,9 @@ use sysmedic_knowledge::Lang;
     name = "sysmedic",
     version,
     about = "SysMedic — a doctor for your Linux system: checkup, diagnose, explain, prescribe.",
-    after_help = "Author:  abosalehg-ui <ar0.history@gmail.com>\n\
+    after_help = "Exit codes: 0 ok; with `checkup --exit-code`, 1 when the worst finding is \
+                  High and 2 when it is Critical; 3 when sysmedic itself failed.\n\n\
+                  Author:  abosalehg-ui <ar0.history@gmail.com>\n\
                   Source:  https://github.com/abosalehg-ui/SysMedic\n\
                   Issues:  https://github.com/abosalehg-ui/SysMedic/issues\n\
                   License: GPL-3.0-or-later"
@@ -161,6 +163,11 @@ mod exit {
     pub const DEGRADED: u8 = 1;
     /// The worst finding is Critical.
     pub const CRITICAL: u8 = 2;
+    /// sysmedic itself failed (bad argument, unreadable file, helper could
+    /// not be launched). Distinct from [`DEGRADED`] on purpose: the generic
+    /// failure code was 1 as well, so a monitoring script could not tell "the
+    /// system is degraded" from "sysmedic crashed".
+    pub const ERROR: u8 = 3;
 }
 
 /// The exit code a report earns, by its most severe finding.
@@ -178,7 +185,7 @@ fn main() -> std::process::ExitCode {
         Ok(code) => std::process::ExitCode::from(code),
         Err(e) => {
             eprintln!("sysmedic: {e:#}");
-            std::process::ExitCode::FAILURE
+            std::process::ExitCode::from(exit::ERROR)
         }
     }
 }
@@ -186,6 +193,7 @@ fn main() -> std::process::ExitCode {
 fn run() -> Result<u8> {
     let cli = Cli::parse();
     let lang = resolve_lang(cli.lang);
+    let t = text::tools(lang);
     match cli.command.unwrap_or(Command::Checkup {
         format: Format::Text,
         output: None,
@@ -196,7 +204,7 @@ fn run() -> Result<u8> {
             output,
             exit_code,
         } => {
-            eprintln!("Running SysMedic checkup...");
+            eprintln!("{}", t.running_checkup);
             let report = engine().run();
 
             if format == Format::Pdf {
@@ -204,7 +212,7 @@ fn run() -> Result<u8> {
                 match sysmedic_report::write_pdf(&report, lang, &path) {
                     Ok(()) => {
                         restrict_permissions(&path);
-                        eprintln!("PDF report written to {}", path.display());
+                        eprintln!("{} {}", t.pdf_written, path.display());
                     }
                     Err(e) => {
                         // Fall back to an HTML file next to the requested path.
@@ -213,7 +221,7 @@ fn run() -> Result<u8> {
                             &html_path,
                             sysmedic_report::to_html(&report, lang).as_bytes(),
                         )?;
-                        eprintln!("{e}\nHTML report written to {}", html_path.display());
+                        eprintln!("{e}\n{} {}", t.html_written, html_path.display());
                     }
                 }
                 return Ok(if exit_code {
@@ -244,7 +252,7 @@ fn run() -> Result<u8> {
             match output {
                 Some(path) => {
                     write_private(&path, rendered.as_bytes())?;
-                    eprintln!("Report written to {}", path.display());
+                    eprintln!("{} {}", t.report_written, path.display());
                 }
                 None => println!("{rendered}"),
             }
@@ -290,20 +298,16 @@ fn run() -> Result<u8> {
                                 // The model's text is untrusted for the terminal:
                                 // strip control sequences before printing.
                                 println!(
-                                    "\nDeep explanation ({}):\n{}",
+                                    "\n{} ({}):\n{}",
+                                    t.deep_header,
                                     provider.model(),
                                     text::sanitize(&answer)
                                 )
                             }
-                            None => eprintln!(
-                                "Deep explanation unavailable; showed the offline answer above."
-                            ),
+                            None => eprintln!("{}", t.deep_unavailable),
                         }
                     }
-                    None => eprintln!(
-                        "\n--deep needs a Claude API key. Set ANTHROPIC_API_KEY to enable it \
-                         (optionally SYSMEDIC_LLM_MODEL to pick a model)."
-                    ),
+                    None => eprintln!("\n{}", t.deep_needs_key),
                 }
             }
         }

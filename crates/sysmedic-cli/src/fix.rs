@@ -142,16 +142,25 @@ pub fn undo(yes: bool, lang: Lang) -> Result<()> {
         // Preview from the journal the *helper* writes, not the one this
         // unprivileged process could write.
         match readable_journal() {
-            Ok(journal) => match journal.last_undoable() {
-                Some((_, entry)) => {
-                    let title =
-                        fixes::undo_title_in(&journal, lang).unwrap_or_else(|| entry.title.clone());
+            Ok(journal) => match fixes::undo_preview_in(&journal, lang) {
+                Some(preview) => {
                     println!(
                         "{} {} ({})",
                         t.would_undo,
-                        title.if_supports_color(Stream::Stdout, |t| t.bold()),
-                        entry.fix_id
+                        preview
+                            .title
+                            .if_supports_color(Stream::Stdout, |t| t.bold()),
+                        preview.fix_id
                     );
+                    // The same consent an apply gets: when it happened, and
+                    // exactly what a root process is about to run.
+                    println!("{} {}", t.applied_at, preview.applied_at);
+                    if !preview.commands.is_empty() {
+                        println!("{}", t.undo_commands);
+                        for command in &preview.commands {
+                            println!("  $ {}", command.display());
+                        }
+                    }
                     println!(
                         "{}",
                         t.rerun_to_undo

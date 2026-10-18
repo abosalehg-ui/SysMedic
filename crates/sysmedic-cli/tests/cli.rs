@@ -84,6 +84,9 @@ fn checks_lists_every_rule() {
 fn explain_rejects_an_unknown_id() {
     let out = sysmedic(&["explain", "not.a.real.finding"]);
     assert!(!out.status.success(), "an unknown id must not exit 0");
+    // 3, not 1: a monitoring script must be able to tell a failed run from
+    // a `--exit-code` verdict of "High".
+    assert_eq!(out.status.code(), Some(3));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("unknown finding id"),
@@ -187,6 +190,12 @@ fn the_secondary_commands_speak_the_requested_language() {
     let ar = stdout(&sysmedic(&["network", "--lang", "ar"]));
     assert!(arabic(&ar), "network stayed English under --lang ar: {ar}");
     assert!(!ar.contains("Listening ports"), "{ar}");
+
+    // The progress line on stderr followed the locale too.
+    let checkup = sysmedic(&["checkup", "--format", "json", "--lang", "ar"]);
+    let stderr = String::from_utf8_lossy(&checkup.stderr);
+    assert!(arabic(&stderr), "checkup progress stayed English: {stderr}");
+    assert!(!stderr.contains("Running SysMedic"));
 
     for command in [
         vec!["fix", "--lang", "ar"],
