@@ -157,6 +157,16 @@ pub fn undo_title_in(journal: &Journal, lang: sysmedic_core::Lang) -> Option<Str
     })
 }
 
+/// The `--lang=<tag>` argument the privileged helper accepts as its last
+/// argument, so it answers in the caller's language. pkexec hands the helper
+/// a minimal environment, which is why `--lang` on the CLI never reached it.
+pub const HELPER_LANG_FLAG: &str = "--lang=";
+
+/// The helper argument that asks for answers in `lang`.
+pub fn helper_lang_arg(lang: sysmedic_core::Lang) -> String {
+    format!("{HELPER_LANG_FLAG}{}", lang.tag())
+}
+
 /// Default install path of the routine privileged helper. It must match the
 /// `org.freedesktop.policykit.exec.path` annotation in
 /// `data/io.github.abosalehg_ui.sysmedic.policy`, or polkit will fall through
@@ -276,6 +286,7 @@ mod tests {
                 firewall_frontend: Some(sysmedic_core::snapshot::FirewallFrontend::Ufw),
                 ssh_permit_root_login: None,
                 ssh_password_auth: None,
+                ssh_ports: vec![],
             }),
             ..Default::default()
         }

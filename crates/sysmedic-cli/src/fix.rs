@@ -123,7 +123,15 @@ pub fn apply(id: &str, dry_run: bool, yes: bool, lang: Lang) -> Result<()> {
         // whether this fix can be undone.
         let helper =
             fixes::helper_for_fix(id).ok_or_else(|| anyhow::anyhow!("fix '{id}' is unknown"))?;
-        delegate(&helper, &["apply", id], lang)
+        // The fingerprint ties the helper's run to the plan previewed above:
+        // it rebuilds the plan as root and refuses if that one would run
+        // anything else.
+        let fingerprint = plan.fingerprint();
+        delegate(
+            &helper,
+            &["apply", id, &fingerprint, &fixes::helper_lang_arg(lang)],
+            lang,
+        )
     }
 }
 
@@ -172,7 +180,11 @@ pub fn undo(yes: bool, lang: Lang) -> Result<()> {
         );
         Ok(())
     } else {
-        delegate(&fixes::undo_helper(), &["undo"], lang)
+        delegate(
+            &fixes::undo_helper(),
+            &["undo", &fixes::helper_lang_arg(lang)],
+            lang,
+        )
     }
 }
 
