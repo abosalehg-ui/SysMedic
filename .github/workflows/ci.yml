@@ -31,7 +31,7 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
@@ -41,7 +41,7 @@ jobs:
       # Coverage is reported, not gated: a threshold invites tests written to
       # move the number. The summary makes a drop visible in review instead.
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@daa3c1f1f9a9d46f686d9fc2f65773d0c293688b # v2.62.44
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.62.44
         with:
           tool: cargo-llvm-cov
       - name: Coverage summary
@@ -99,7 +99,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
-      - uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       # `check`, not `test`: this gate is about the toolchain floor compiling
       # the workspace, and the stable job above already runs the suite.
       - name: Check
